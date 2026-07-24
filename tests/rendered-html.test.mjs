@@ -349,9 +349,10 @@ test("delivery exports exactly three core images and three project documents",as
   assert.match(delivery,/01_Logo\/定稿Logo\.\$\{logoFile\.extension\}/);
   assert.match(delivery,/02_产品设计\/产品概念图\.\$\{productFile\.extension\}/);
   assert.match(delivery,/03_外包装设计\/外包装效果图\.\$\{packagingFile\.extension\}/);
-  assert.match(delivery,/04_项目资料\/项目简报\.md/);
-  assert.match(delivery,/04_项目资料\/定稿文案\.md/);
-  assert.match(delivery,/04_项目资料\/质检报告\.md/);
+  assert.match(delivery,/createProjectPdf/);
+  assert.match(delivery,/04_项目资料\/项目简报\.pdf/);
+  assert.match(delivery,/04_项目资料\/定稿文案\.pdf/);
+  assert.match(delivery,/04_项目资料\/质检报告\.pdf/);
   assert.match(delivery,/assetCount: 6/);
   assert.doesNotMatch(delivery,/marketingImages|saveTemplate/);
   assert.doesNotMatch(quality,/marketing/i);

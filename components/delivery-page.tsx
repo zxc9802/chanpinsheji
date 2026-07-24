@@ -4,6 +4,7 @@ import JSZip from "jszip";
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useDesignBrief } from "@/components/design-brief-provider";
+import { createProjectPdf } from "@/lib/project-pdf";
 import { runQualityChecks } from "@/services/quality-checker";
 import type { CopyField } from "@/types/copy";
 import type { QualityCheckItem } from "@/types/delivery";
@@ -239,13 +240,18 @@ export function DeliveryPage() {
         readExportImage(packaging!.candidate.previewImageUrl, "外包装效果图"),
       ]);
 
+      const [briefPdf, copyPdf, qualityPdf] = await Promise.all([
+        createProjectPdf(buildBriefMarkdown(brief, product!, packaging!)),
+        createProjectPdf(buildCopyMarkdown(finalCopy!.fields, brief.insights)),
+        createProjectPdf(buildQualityMarkdown(report)),
+      ]);
       const zip = new JSZip();
       zip.file(`01_Logo/定稿Logo.${logoFile.extension}`, logoFile.data);
       zip.file(`02_产品设计/产品概念图.${productFile.extension}`, productFile.data);
       zip.file(`03_外包装设计/外包装效果图.${packagingFile.extension}`, packagingFile.data);
-      zip.file("04_项目资料/项目简报.md", buildBriefMarkdown(brief, product!, packaging!));
-      zip.file("04_项目资料/定稿文案.md", buildCopyMarkdown(finalCopy!.fields, brief.insights));
-      zip.file("04_项目资料/质检报告.md", buildQualityMarkdown(report));
+      zip.file("04_项目资料/项目简报.pdf", briefPdf);
+      zip.file("04_项目资料/定稿文案.pdf", copyPdf);
+      zip.file("04_项目资料/质检报告.pdf", qualityPdf);
 
       const blob = await zip.generateAsync({ type: "blob" });
       const filename = `${safeName(brief.brand.name)}-${safeName(brief.product.name)}-交付包.zip`;
@@ -315,9 +321,9 @@ export function DeliveryPage() {
             <div><strong>03_外包装设计</strong><span>外包装效果图.[实际格式]</span></div>
             <div>
               <strong>04_项目资料</strong>
-              <span>项目简报.md</span>
-              <span>定稿文案.md</span>
-              <span>质检报告.md</span>
+              <span>项目简报.pdf</span>
+              <span>定稿文案.pdf</span>
+              <span>质检报告.pdf</span>
             </div>
           </div>
           <div className="delivery-actions">
