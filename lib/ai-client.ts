@@ -13,14 +13,14 @@ async function readPayload<T>(response: Response): Promise<T> {
   catch { throw apiError(response, raw); }
 }
 
-function responseError(response: Response, payload: { error?: string }) {
-  return new Error(payload.error || `AI 服务返回 ${response.status}`);
+function responseError(response: Response, error?: string) {
+  return new Error(error || `AI 服务返回 ${response.status}`);
 }
 
 async function startImageJob(body: unknown) {
   const response = await fetch("/api/ai/image", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
   const payload = await readPayload<ApiPayload<ImageJobStart>>(response);
-  if (!response.ok || response.status !== 202) throw responseError(response, payload);
+  if (!response.ok || response.status !== 202) throw responseError(response, payload.error);
   if (!payload.jobId) throw new Error("图像任务创建失败：服务未返回任务 ID");
   return payload.jobId;
 }
@@ -33,7 +33,7 @@ async function pollImageJob<T>(jobId: string): Promise<AiResponse<T>> {
   while (Date.now() < deadline) {
     const response = await fetch(`/api/ai/image?jobId=${encodeURIComponent(jobId)}`);
     const payload = await readPayload<ApiPayload<ImageJobPoll<T>>>(response);
-    if (!response.ok) throw responseError(response, payload);
+    if (!response.ok) throw responseError(response, payload.error);
     if (payload.status === "completed") {
       if (!payload.result) throw new Error("图像任务完成但未返回结果");
       return payload.result;
@@ -59,13 +59,13 @@ export async function callAi<T>(generator: AiUsageRecord["generator"], path: "co
   const selectedProvider = path === "image" ? await getAiProvider("image") : undefined;
   const requestBody = selectedProvider && typeof body === "object" && body !== null ? { ...body, provider: selectedProvider } : body;
   try {
-    let payload: AiResponse<T>;
+    let payload: ApiPayload<AiResponse<T>>;
     if (path === "image") {
       payload = await pollImageJob<T>(await startImageJob(requestBody));
     } else {
       const response = await fetch(`/api/ai/${path}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(requestBody) });
       payload = await readPayload<ApiPayload<AiResponse<T>>>(response);
-      if (!response.ok) throw responseError(response, payload);
+      if (!response.ok) throw responseError(response, payload.error);
     }
     recordAiUsage({ generator, provider: payload.usage?.provider || path, tokens: payload.usage?.tokens, images: payload.usage?.images, durationMs: payload.usage?.durationMs || Date.now() - started, success: true });
     return payload.data;
