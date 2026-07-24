@@ -39,3 +39,12 @@ test("image route starts work asynchronously and exposes poll status", async () 
   assert.match(route, /jobId/);
   assert.match(route, /imageJobManager\.enqueue/);
 });
+
+test("image client starts and polls jobs while preserving callAi results", async () => {
+  const client = await readFile(new URL("../lib/ai-client.ts", import.meta.url), "utf8");
+  assert.match(client, /startImageJob/);
+  assert.match(client, /pollImageJob/);
+  assert.match(client, /1500/);
+  assert.match(client, /10 \* 60 \* 1000/);
+  assert.match(client, /path === "image"/);
+});
