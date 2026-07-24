@@ -81,7 +81,7 @@ export function checkBoxDimensions(brief: DesignBrief, box: BoxType, container?:
 const colorMap: Record<string,string> = { "雾白":"#f3f1e9","鼠尾草绿":"#7b9b87","岩灰":"#555c58","云白":"#e8ebe6","苔藓绿":"#496551","米杏":"#e9dfca","琥珀棕":"#8b5a3c","乳白":"#f2eadc","冰川蓝":"#b9dce8","金属银":"#aeb7bb","深海蓝":"#183b50","电光青":"#63c8c5","象牙白":"#f2eadb","香槟金":"#c9a66b","曜石黑":"#202321","玫瑰金":"#bd8375","青瓷绿":"#86a99a","月白":"#edf0e8","朱砂红":"#a74638","墨黑":"#292b29" };
 export const packagingSwatch = (name: string) => colorMap[name] || "#769184";
 
-const field = (params: PackagingGenParams, key: string, fallback: string) => params.finalCopy.fields.find((item) => item.key === key)?.content || fallback;
+const field = (params: PackagingGenParams, key: string, fallback: string) => params.finalCopy?.fields.find((item) => item.key === key)?.content || fallback;
 function makeFaces(params: PackagingGenParams, layout: number): PackagingFace[] {
   const frontPos = ["上方居中","左上留白","中央纵向","右下错位"][layout % 4];
   return [
@@ -107,35 +107,28 @@ function costEstimate(params: PackagingGenParams, box: BoxType, index: number) {
 function directPreviewPrompt(params:PackagingGenParams,index:number){
  const variation=params.variationHint?`本轮微调：${params.variationHint}。`:"";
  const base=params.designPrompt?.trim()||`为品牌 ${params.brief.brand.name} 的 ${params.brief.product.name} 设计外包装效果预览，沿用产品 CMF ${params.finalProductDesign.cmf.colorScheme.join("、")}、${params.finalProductDesign.cmf.material}、${params.finalProductDesign.cmf.finish}。`;
- const box=params.boxType||boxTypes.find((item)=>item.id===params.boxTypeId)||boxTypes[0];
- const analysis=box.referenceAnalysis;
- const structureSummary=analysis?.structureSummary||box.description;
- const views=analysis?.viewMode==="two_view"?"正面和背面":"正面、侧面和背面";
  return `${base}
 
-真实参考图顺序：第一张是外包装结构参考，是唯一结构强约束，必须保持轮廓、比例、开合方式和主要结构；第二张是定稿 Logo，必须保持图形、字形、比例和组合关系。没有产品概念图或产品本体图片输入。产品 CMF 仅以文字参与配色与材质协调。
-唯一主设计对象是外包装。已确认结构：${structureSummary}。禁止把外包装画成茶包、面膜袋、瓶器、罐体、设备或其他产品本体。
-${variation}这是同一提示词下的第 ${index+1} 个效果方案，可以调整次级图形、光线、材质细节和场景道具，但不得更换外包装结构或 Logo。
-输出一张 9:16 高质量外包装概念效果预览：上方约 60% 是一张连续完整的商业场景，完整外包装必须占据视觉中心；产品本体最多是小比例辅助道具。下方约 40% 是干净背景上的外包装结构效果展示，只展示同一外包装的${views}，严禁任何产品本体进入下方结构区。上下只允许水平分区，所有视图必须是同一套外包装设计。
+真实参考图顺序：第 1 张是定稿 Logo 强参考，必须保持图形、字形、比例、留白和组合关系；第 2 张是定稿产品图。产品图仅用于提取配色、材质、表面工艺、光线与品牌氛围，严禁复制其产品本体、器型、封口、功能结构或将其误画为外包装。
+唯一主设计对象是外包装。根据用户要求、产品品类和合理装配空间自行规划可生产的外包装结构、轮廓、开合方式与材质；每张候选可探索不同结构，不受旧盒型限制。禁止把外包装画成茶包、面膜袋、瓶器、罐体、设备或其他产品本体。
+${variation}这是同一提示词下的第 ${index+1} 个效果方案，可以调整结构、图形语言、光线、材质细节和场景道具，但不得更换或重绘定稿 Logo。
+输出一张 9:16 高质量外包装概念效果预览：上方约 60% 是一张连续完整的商业场景，完整外包装必须占据视觉中心；产品本体最多是小比例辅助道具。下方约 40% 是干净背景上的同一外包装正面、侧面和背面展示，严禁任何产品本体进入下方结构区。上下只允许水平分区，所有视图必须是同一套外包装设计。
 严禁刀版、展开图、平面展开稿、CAD、尺寸线、裁切线、折线、出血线、印刷工程标注、灰色信息块、UI、提示词、JSON、水印和左右分栏。画面必须是制作完成后的真实外包装效果，而不是设计稿截图。`;
 }
 
 class AiPackagingGenerator implements PackagingGenerator{
  async generate(params:PackagingGenParams){
-  const box=params.boxType||boxTypes.find((item)=>item.id===params.boxTypeId)||boxTypes[0];
+  const box=aiGeneratedBoxType;
   const count=Math.max(1,Math.min(5,params.count));
   const prompts=Array.from({length:count},(_,index)=>directPreviewPrompt(params,index));
-  const references=[
-   box.referenceImageUrl||box.structureImageUrl,
-   params.finalLogo.imageUrl,
-   params.basePackagingImageUrl,
-  ].filter((value):value is string=>Boolean(value));
+  if(!params.finalProductDesign.imageUrl)throw new Error("缺少定稿产品图参考");
+  const references=[params.finalLogo.imageUrl,params.finalProductDesign.imageUrl];
   const urls=await callAi<(string|undefined)[]>("packaging","image",{prompts,referenceImageGroups:prompts.map(()=>references),size:"1024x1536",quality:"high"});
   const seed=Date.now();
   const generated=urls.flatMap((url,index)=>{
    if(!url)return[];
    const palette=params.variationHint==="换配色"&&index%2?[...params.finalProductDesign.cmf.colorScheme].reverse():[...params.finalProductDesign.cmf.colorScheme];
-   return[{id:`pack-ai-${seed}-${index}`,boxTypeId:box.id,previewImageUrl:url,faces:makeFaces(params,index),palette,costEstimate:costEstimate(params,box,index),renderMode:"direct_ai_preview" as const,generationPrompt:prompts[index],directionName:params.directionName,createdAt:new Date().toISOString(),subjectReviewStatus:"pending" as const,...(params.basePackagingId?{parentId:params.basePackagingId}:{}),round:1}];
+   return[{id:`pack-ai-${seed}-${index}`,boxTypeId:box.id,previewImageUrl:url,faces:makeFaces(params,index),palette,costEstimate:costEstimate(params,box,index),renderMode:"direct_ai_preview" as const,generationPrompt:prompts[index],directionName:params.directionName||`外包装方案 ${index+1}`,createdAt:new Date().toISOString(),...(params.basePackagingId?{parentId:params.basePackagingId}:{}),round:1}];
   });
   if(!generated.length)throw new Error("图像服务未返回外包装效果预览");
   return generated;
