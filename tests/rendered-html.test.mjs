@@ -241,89 +241,42 @@ test("product structure workflow defaults to a confirmed uploaded reference",asy
   assert.match(page,/structureConfirmed/);
 });
 
-test("step five uses an uploaded outer-package reference instead of the built-in box grid",async()=>{
-  const [page,types,generator,provider]=await Promise.all([
+test("step five directly generates multiple AI packaging concepts from fixed logo and product references",async()=>{
+  const [page,types,generator,provider,delivery]=await Promise.all([
     read("../components/packaging-design-page.tsx"),
     read("../types/packaging.ts"),
     read("../services/packaging-generator.ts"),
     read("../components/design-brief-provider.tsx"),
-  ]);
-  assert.match(page,/<h2>上传外包装参考图<\/h2>/);
-  assert.match(page,/uploadBoxReference/);
-  assert.match(page,/uploadedBoxType/);
-  assert.match(page,/structureConfirmed/);
-  assert.match(page,/className="ai-dimension-field"/);
-  assert.doesNotMatch(page,/dimensionsFrom/);
-  assert.doesNotMatch(page,/选择盒型结构/);
-  assert.doesNotMatch(page,/className="box-grid"/);
-  assert.doesNotMatch(page,/rankBoxTypes/);
-  assert.doesNotMatch(page,/checkBoxDimensions/);
-  assert.match(types,/uploadedBoxType\?: BoxType/);
-  assert.match(types,/structureConfirmed\?: boolean/);
-  assert.match(generator,/params\.boxType\s*\|\|\s*boxTypes\.find/);
-  assert.match(generator,/referenceImageGroups/);
-  assert.match(provider,/old\.packagingProject\.uploadedBoxType/);
-  assert.doesNotMatch(provider,/selectedBoxTypeId: template\.boxTypeId/);
-});
-
-test("step five creates editable direct-AI packaging effect previews without dielines",async()=>{
-  const [page,types,generator,prompt,route,delivery,provider]=await Promise.all([
-    read("../components/packaging-design-page.tsx"),
-    read("../types/packaging.ts"),
-    read("../services/packaging-generator.ts"),
-    read("../services/prompts/packaging-design-prompt.ts"),
-    read("../app/api/ai/copy/route.ts"),
     read("../components/delivery-page.tsx"),
-    read("../components/design-brief-provider.tsx"),
   ]);
-  assert.match(page,/packagingDesignPromptGenerator/);
-  assert.match(page,/promptDirectionCount/);
-  assert.match(page,/promptOptions/);
-  assert.match(page,/type="checkbox"/);
-  assert.match(page,/count: 1/);
+  assert.match(page,/定稿 Logo · 必用/);
+  assert.match(page,/定稿产品图 · 必用/);
+  assert.match(page,/用户外包装设计要求/);
+  assert.match(page,/generationCount/);
+  assert.match(page,/finalProductDesign:\{ imageUrl: finalProduct\.imageUrl/);
+  assert.doesNotMatch(page,/uploadBoxReference|packagingStructureAnalyzer|packagingQualityReviewer/);
+  assert.doesNotMatch(page,/packagingDesignPromptGenerator|promptOptions|structureConfirmed/);
   assert.match(page,/pack-effect-preview-modal/);
   assert.match(page,/previewZoom/);
   assert.match(page,/preview-zoom-toolbar/);
   assert.match(page,/preview-zoom-stage/);
   assert.match(page,/onWheel/);
-  assert.doesNotMatch(page,/生成变体/);
-  assert.doesNotMatch(page,/AI 效果预览/);
-  assert.doesNotMatch(page,/cost-warning/);
   assert.match(page,/加入已选/);
-  assert.doesNotMatch(page,/查看各面/);
   assert.match(types,/renderMode\?: "legacy_dieline" \| "direct_ai_preview"/);
-  assert.match(types,/promptOptions: PackagingPromptOption\[\]/);
-  assert.match(types,/promptDirectionCount: number/);
-  assert.match(types,/generationPrompt: string/);
+  assert.match(types,/aiGeneratedPackagingBoxTypeId/);
+  assert.match(types,/promptVersion: 3/);
   assert.match(generator,/directPreviewPrompt/);
   assert.match(generator,/renderMode:"direct_ai_preview"/);
   assert.match(generator,/size:"1024x1536"/);
   assert.doesNotMatch(generator,/composeTexture/);
   assert.doesNotMatch(generator,/previewSvg/);
-  assert.match(prompt,/禁止刀版、展开图/);
-  assert.match(prompt,/subjectType/);
-  assert.match(prompt,/outer_package/);
-  assert.match(prompt,/没有产品概念图或产品本体图片输入/);
-  assert.match(prompt,/产品 CMF 文字协调参考/);
-  assert.match(prompt,/"directions"/);
-  assert.match(page,/packagingStructureAnalyzer/);
-  assert.match(page,/packagingQualityReviewer/);
-  assert.match(page,/确认结构并作为唯一主体/);
-  assert.doesNotMatch(page,/产品视觉 · 参考/);
-  assert.doesNotMatch(page,/productImageUrl/);
-  assert.doesNotMatch(generator,/params\.finalProductDesign\.imageUrl/);
-  assert.match(generator,/subjectReviewStatus:"pending"/);
-  assert.match(route,/packaging-design-prompt/);
-  assert.match(route,/packaging-structure-identify/);
-  assert.match(route,/packaging-subject-review/);
-  assert.match(route,/item\.subjectType!=="outer_package"/);
-  assert.doesNotMatch(route,/params\.productImageUrl/);
-  assert.match(route,/AI 应返回 \$\{count\} 条包装设计提示词/);
-  assert.match(types,/referenceAnalysis\?: PackagingReferenceAnalysis/);
-  assert.match(types,/subjectReview\?: PackagingSubjectReview/);
+  assert.match(generator,/params\.finalLogo\.imageUrl/);
+  assert.match(generator,/params\.finalProductDesign\.imageUrl/);
+  assert.match(generator,/产品图仅用于提取配色、材质、表面工艺、光线与品牌氛围/);
+  assert.doesNotMatch(generator,/外包装结构参考/);
+  assert.match(provider,/aiGeneratedBoxType/);
   assert.match(provider,/migratePackagingProject/);
-  assert.match(provider,/promptVersion:\s*2/);
-  assert.match(provider,/structureSimilarity\?\?0/);
+  assert.match(provider,/promptVersion:3/);
   assert.match(delivery,/03_外包装设计\/外包装效果图\.\$\{packagingFile\.extension\}/);
   assert.doesNotMatch(delivery,/刀版示意图/);
   assert.doesNotMatch(delivery,/包装展开布局/);
