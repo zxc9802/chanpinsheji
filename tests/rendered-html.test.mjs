@@ -351,6 +351,24 @@ test("step one no longer exposes or requires packaging language",async()=>{
   assert.match(importPrompt,/styleKeywords 为兼容旧数据固定返回空数组/);
 });
 
+test("logo generation is manual and appends each completed image immediately",async()=>{
+  const [page,generator,client,imageRoute,jobManager]=await Promise.all([
+    read("../components/logo-design-page.tsx"),
+    read("../services/logo-generator.ts"),
+    read("../lib/ai-client.ts"),
+    read("../app/api/ai/image/route.ts"),
+    read("../lib/image-job-manager.ts"),
+  ]);
+  assert.doesNotMatch(page,/useEffect|autoStarted/);
+  assert.match(page,/onCandidate:/);
+  assert.match(page,/完成一张即显示一张/);
+  assert.match(generator,/onCandidate\?\.\(candidate\)/);
+  assert.match(generator,/onProgress:\(partialUrls\)=>partialUrls\.forEach\(publishCandidate\)/);
+  assert.match(client,/onProgress\?\.\(payload\.result\.data\)/);
+  assert.match(imageRoute,/onImage\?\.\(index\+offset,result\)/);
+  assert.match(jobManager,/publishProgress/);
+});
+
 test("workflow is reduced to six steps and legacy step seven redirects",async()=>{
   const [route,shell,packaging]=await Promise.all([
     read("../app/workflow/[step]/page.tsx"),

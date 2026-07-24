@@ -45,6 +45,20 @@ test("runs queued jobs one at a time in FIFO order", async () => {
   assert.deepEqual(order, ["first", "second"]);
 });
 
+test("exposes published image progress before a job completes", async () => {
+  let finish;
+  const manager = new ImageJobManager();
+  const job = manager.enqueue({ prompts: ["first", "second"] }, (publishProgress) => new Promise((resolve) => {
+    publishProgress({ data: ["first", undefined], usage });
+    finish = resolve;
+  }));
+
+  await waitFor(() => manager.get(job.id)?.status, "running");
+  assert.deepEqual(manager.get(job.id)?.result?.data, ["first", undefined]);
+  finish({ data: ["first", "second"], usage: { ...usage, images: 2 } });
+  await waitFor(() => manager.get(job.id)?.status, "completed");
+});
+
 test("records a failed job and removes terminal jobs after their TTL", async () => {
   let now = 1_000;
   const manager = new ImageJobManager({ ttlMs: 100, now: () => now });

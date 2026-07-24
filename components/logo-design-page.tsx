@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { logoGenerator } from "@/services/logo-generator";
 import type { LogoCandidate, LogoFontStyle, LogoType } from "@/types/logo";
@@ -53,7 +53,6 @@ export function LogoDesignPage() {
   const [recycleOpen,setRecycleOpen]=useState(false);
   const [batchMode,setBatchMode]=useState(false);
   const [batchSelectedIds,setBatchSelectedIds]=useState<Set<string>>(()=>new Set());
-  const autoStarted = useRef(false);
 
   const candidateNumber = (id: string) => logoProject.candidates.findIndex((item) => item.id === id) + 1;
   const favorites = logoProject.favoriteIds.flatMap((id) => {
@@ -87,23 +86,15 @@ export function LogoDesignPage() {
         fontWeight:logoProject.fontWeight,
         colorPreference:logoProject.colorPreference,
         avoidElements:logoProject.avoidElements,
-      });
-      updateLogoProject((current) => ({ ...current, generationRound: nextRound, candidates: [...current.candidates, ...candidates.map((item) => ({ ...item, round: nextRound }))] }));
-      setNotice(base ? `已基于方案 #${candidateNumber(base.id)} 生成 ${count} 个变体` : `已生成 ${count} 个新方案`);
+      },{onCandidate:(candidate)=>updateLogoProject((current)=>current.candidates.some((item)=>item.id===candidate.id)?current:({ ...current, generationRound: nextRound, candidates: [...current.candidates, { ...candidate, round: nextRound }] }))});
+      const generatedLabel=candidates.length===count?`${count} 个`:`${candidates.length}/${count} 个`;
+      setNotice(base ? `已基于方案 #${candidateNumber(base.id)} 生成 ${generatedLabel} 变体` : `已生成 ${generatedLabel} 新方案`);
     } catch (error) {
       setNotice(`生成失败：${error instanceof Error ? error.message : "服务返回未知错误"}`);
     } finally {
       setGenerating(false);
     }
   };
-
-  useEffect(() => {
-    if (!hydrated || !completedSteps.includes(1) || logoProject.candidates.length || logoProject.generationRound > 0 || autoStarted.current) return;
-    autoStarted.current = true;
-    void generate(logoProject.generationCount);
-    // 首次进入仅触发一次，后续生成由用户发起。
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [hydrated, completedSteps, logoProject.candidates.length, logoProject.generationRound]);
 
   const toggleFavorite = (candidate: LogoCandidate) => {
     const exists = logoProject.favoriteIds.includes(candidate.id);
@@ -227,7 +218,7 @@ export function LogoDesignPage() {
       </section>
 
       <section className="logo-workspace-section">
-        <div className="logo-section-title"><div><span>02</span><div><h2>方案探索</h2><p>{logoProject.candidates.length ? `共 ${logoProject.candidates.length} 个方案 · ${logoProject.generationRound} 轮探索` : "正在准备首轮方案"}</p></div></div><div className="exploration-tools">{batchMode?<><button className="batch-tool-button" type="button" onClick={toggleSelectAllVisible}>{visibleDeletableIds.length>0&&visibleDeletableIds.every(id=>batchSelectedIds.has(id))?"取消全选":"全选当前"}</button><button className="batch-delete-button" type="button" disabled={!batchSelectedIds.size} onClick={batchDeleteCandidates}>删除所选 {batchSelectedIds.size}</button><button className="batch-tool-button" type="button" onClick={()=>{setBatchMode(false);setBatchSelectedIds(new Set())}}>取消</button></>:<button className="batch-tool-button" type="button" onClick={()=>setBatchMode(true)}>批量删除</button>}<button className="recycle-bin-button" type="button" onClick={()=>setRecycleOpen(true)}>历史回收站 <b>{logoProject.deletedCandidates.length}</b></button></div></div>
+        <div className="logo-section-title"><div><span>02</span><div><h2>方案探索</h2><p>{logoProject.candidates.length ? `${generating?"正在生成 · ":""}共 ${logoProject.candidates.length} 个方案 · ${logoProject.generationRound} 轮探索` : generating ? "正在生成，完成一张即显示一张" : "调整参数后，点击生成开始首轮探索"}</p></div></div><div className="exploration-tools">{batchMode?<><button className="batch-tool-button" type="button" onClick={toggleSelectAllVisible}>{visibleDeletableIds.length>0&&visibleDeletableIds.every(id=>batchSelectedIds.has(id))?"取消全选":"全选当前"}</button><button className="batch-delete-button" type="button" disabled={!batchSelectedIds.size} onClick={batchDeleteCandidates}>删除所选 {batchSelectedIds.size}</button><button className="batch-tool-button" type="button" onClick={()=>{setBatchMode(false);setBatchSelectedIds(new Set())}}>取消</button></>:<button className="batch-tool-button" type="button" onClick={()=>setBatchMode(true)}>批量删除</button>}<button className="recycle-bin-button" type="button" onClick={()=>setRecycleOpen(true)}>历史回收站 <b>{logoProject.deletedCandidates.length}</b></button></div></div>
         {notice.startsWith("生成失败")&&<div className="generation-error" role="alert">{notice}</div>}
         <div className="logo-type-filter"><span>类型筛选</span><button type="button" className={typeFilter==="all"?"active":""} onClick={()=>setTypeFilter("all")}>全部</button>{logoTypeOptions.map(item=><button type="button" className={typeFilter===item.id?"active":""} key={item.id} onClick={()=>setTypeFilter(item.id)}>{item.label}</button>)}</div>
         {generating && logoProject.candidates.length === 0 ? <div className="logo-loading-grid">{Array.from({ length: logoProject.generationCount }).map((_, i) => <span key={i} />)}</div> : rounds.map(({ round, candidates }) => (

@@ -9,7 +9,7 @@ type InternalImageJob<T> = {
   id: string;
   input: T;
   status: ImageJobStatus;
-  run: () => Promise<ImageJobResult>;
+  run: (publishProgress: (result: ImageJobResult) => void) => Promise<ImageJobResult>;
   result?: ImageJobResult;
   error?: string;
   expiresAt?: number;
@@ -31,7 +31,7 @@ export class ImageJobManager<T = unknown> {
     this.options = options;
   }
 
-  enqueue(input: T, run: () => Promise<ImageJobResult>): ImageJob {
+  enqueue(input: T, run: (publishProgress: (result: ImageJobResult) => void) => Promise<ImageJobResult>): ImageJob {
     const job: InternalImageJob<T> = {
       id: crypto.randomUUID(),
       input,
@@ -75,7 +75,7 @@ export class ImageJobManager<T = unknown> {
 
         job.status = "running";
         try {
-          job.result = await job.run();
+          job.result = await job.run((result) => { job.result = result; });
           job.status = "completed";
         } catch (error) {
           job.error = error instanceof Error ? error.message : typeof error === "string" ? error : "图像生成失败";

@@ -28,12 +28,20 @@ async function startImageJob(body: unknown) {
 const IMAGE_JOB_POLL_MS = 1500;
 const IMAGE_JOB_TIMEOUT_MS = 10 * 60 * 1000;
 
-async function pollImageJob<T>(jobId: string): Promise<AiResponse<T>> {
+async function pollImageJob<T>(jobId: string,onProgress?: (data:T) => void): Promise<AiResponse<T>> {
   const deadline = Date.now() + IMAGE_JOB_TIMEOUT_MS;
+  let lastProgress = "";
   while (Date.now() < deadline) {
     const response = await fetch(`/api/ai/image?jobId=${encodeURIComponent(jobId)}`);
     const payload = await readPayload<ApiPayload<ImageJobPoll<T>>>(response);
     if (!response.ok) throw responseError(response, payload.error);
+    if (payload.result) {
+      const progress=JSON.stringify(payload.result.data);
+      if (progress !== lastProgress) {
+        lastProgress = progress;
+        onProgress?.(payload.result.data);
+      }
+    }
     if (payload.status === "completed") {
       if (!payload.result) throw new Error("图像任务完成但未返回结果");
       return payload.result;
@@ -54,14 +62,14 @@ export async function getAiProvider(type: "copy" | "image") {
   }
   return defaults![type];
 }
-export async function callAi<T>(generator: AiUsageRecord["generator"], path: "copy" | "image", body: unknown): Promise<T> {
+export async function callAi<T>(generator: AiUsageRecord["generator"], path: "copy" | "image", body: unknown,options?: { onProgress?: (data:T) => void }): Promise<T> {
   const started = Date.now();
   const selectedProvider = path === "image" ? await getAiProvider("image") : undefined;
   const requestBody = selectedProvider && typeof body === "object" && body !== null ? { ...body, provider: selectedProvider } : body;
   try {
     let payload: ApiPayload<AiResponse<T>>;
     if (path === "image") {
-      payload = await pollImageJob<T>(await startImageJob(requestBody));
+      payload = await pollImageJob<T>(await startImageJob(requestBody),options?.onProgress);
     } else {
       const response = await fetch(`/api/ai/${path}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(requestBody) });
       payload = await readPayload<ApiPayload<AiResponse<T>>>(response);

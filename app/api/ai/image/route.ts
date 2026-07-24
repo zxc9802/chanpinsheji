@@ -69,10 +69,14 @@ async function generateOne(prompt: string, provider: "doubao" | "yunwu", referen
   });
 }
 
-async function generateInBatches(prompts: string[], provider: "doubao" | "yunwu", referenceImages:(string|undefined)[],referenceImageGroups:string[][],size?:string,quality?:"low"|"medium"|"high") {
+async function generateInBatches(prompts: string[], provider: "doubao" | "yunwu", referenceImages:(string|undefined)[],referenceImageGroups:string[][],size?:string,quality?:"low"|"medium"|"high",onImage?: (index:number,result:Awaited<ReturnType<typeof generateOne>>) => void) {
   const results: PromiseSettledResult<Awaited<ReturnType<typeof generateOne>>>[] = [];
   for (let index = 0; index < prompts.length; index += 3) {
-    results.push(...await Promise.allSettled(prompts.slice(index, index + 3).map((prompt,offset) => generateOne(prompt, provider, referenceImageGroups[index+offset]?.length?referenceImageGroups[index+offset]:referenceImages[index+offset]?[referenceImages[index+offset]!]:[],size,quality))));
+    results.push(...await Promise.allSettled(prompts.slice(index, index + 3).map(async (prompt,offset) => {
+      const result=await generateOne(prompt, provider, referenceImageGroups[index+offset]?.length?referenceImageGroups[index+offset]:referenceImages[index+offset]?[referenceImages[index+offset]!]:[],size,quality);
+      onImage?.(index+offset,result);
+      return result;
+    })));
   }
   return results;
 }
@@ -90,23 +94,29 @@ function normalizeImageRequest(body: ImageRequest): NormalizedImageRequest {
   return { prompts, provider, referenceImages, referenceImageGroups, size, quality };
 }
 
-async function runImageJob(body: NormalizedImageRequest): Promise<ImageJobResult> {
-  const results = await generateInBatches(body.prompts, body.provider, body.referenceImages, body.referenceImageGroups, body.size, body.quality);
-  const images = results.map((result) => result.status === "fulfilled" ? imageUrl(result.value.data) : undefined);
-  const succeeded = images.filter(Boolean).length;
+async function runImageJob(body: NormalizedImageRequest,publishProgress?: (result:ImageJobResult) => void): Promise<ImageJobResult> {
+  const images:(string|undefined)[]=Array.from({length:body.prompts.length});
+  let durationMs=0;
+  const results = await generateInBatches(body.prompts, body.provider, body.referenceImages, body.referenceImageGroups, body.size, body.quality,(index,result)=>{
+    images[index]=imageUrl(result.data);
+    durationMs=Math.max(durationMs,result.usage.durationMs);
+    publishProgress?.({data:[...images],usage:{provider:body.provider,durationMs,images:images.filter(Boolean).length}});
+  });
+  const completedImages = results.map((result) => result.status === "fulfilled" ? imageUrl(result.value.data) : undefined);
+  const succeeded = completedImages.filter(Boolean).length;
   if (succeeded / body.prompts.length <= .5) {
     const reason=results.find((result):result is PromiseRejectedResult=>result.status==="rejected")?.reason;
     const detail=reason instanceof Error?reason.message:typeof reason==="string"?reason:"服务未返回图片";
     throw new Error(`图像生成成功率 ${Math.round(succeeded / body.prompts.length * 100)}%。原因：${detail}`);
   }
-  const durationMs = Math.max(...results.flatMap((result) => result.status === "fulfilled" ? [result.value.usage.durationMs] : [0]));
-  return { data: images, usage: { provider: body.provider, durationMs, images: succeeded } };
+  const completedDurationMs = Math.max(...results.flatMap((result) => result.status === "fulfilled" ? [result.value.usage.durationMs] : [0]));
+  return { data: completedImages, usage: { provider: body.provider, durationMs: completedDurationMs, images: succeeded } };
 }
 
 export async function POST(request: Request) {
   try {
     const body = normalizeImageRequest(await request.json() as ImageRequest);
-    const job = imageJobManager.enqueue(body, () => runImageJob(body));
+    const job = imageJobManager.enqueue(body, (publishProgress) => runImageJob(body,publishProgress));
     return Response.json({ jobId: job.id, status: job.status }, { status: 202 });
   } catch (error) {
     return Response.json({ error: error instanceof Error ? error.message : "图像任务创建失败" }, { status: error instanceof ImageRequestError ? error.status : 400 });
