@@ -1,6 +1,7 @@
 import { getProviderOverrides, recordAiUsage, type AiUsageRecord } from "./ai-usage";
 
 type AiResponse<T> = { data: T; usage?: { tokens?: number; images?: number; provider: string; durationMs: number } };
+function apiError(response:Response,raw:string){const detail=raw.replace(/\s+/g," ").trim().slice(0,300);return new Error(`AI 服务返回 HTTP ${response.status}${detail?`：${detail}`:""}`);}
 let defaults: { copy: "deepseek" | "gemini"; image: "doubao" | "yunwu" } | undefined;
 export async function getAiProvider(type: "copy" | "image") {
   const override = getProviderOverrides()[type];
@@ -17,7 +18,8 @@ export async function callAi<T>(generator: AiUsageRecord["generator"], path: "co
   const requestBody = selectedProvider && typeof body === "object" && body !== null ? { ...body, provider: selectedProvider } : body;
   try {
     const response = await fetch(`/api/ai/${path}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(requestBody) });
-    const payload = await response.json() as AiResponse<T> & { error?: string };
+    const raw = await response.text();let payload:AiResponse<T> & { error?: string };
+    try{payload=JSON.parse(raw) as typeof payload;}catch{throw apiError(response,raw);}
     if (!response.ok) throw new Error(payload.error || `AI 服务返回 ${response.status}`);
     recordAiUsage({ generator, provider: payload.usage?.provider || path, tokens: payload.usage?.tokens, images: payload.usage?.images, durationMs: payload.usage?.durationMs || Date.now() - started, success: true });
     return payload.data;
