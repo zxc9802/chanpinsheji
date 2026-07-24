@@ -10,12 +10,14 @@ export interface PackagingFace {
   elements: { type: PackagingElementType; content: string; position: string }[];
 }
 
+export const aiGeneratedPackagingBoxTypeId = "ai-generated-package";
+
 export interface PackagingGenParams {
   brief: DesignBrief;
   finalLogo: { imageUrl: string; styleTags: string[] };
-  finalCopy: CopyPackage;
-  finalProductDesign: { imageUrl?: string; cmf: { colorScheme: string[]; material: string; finish: string } };
-  boxTypeId: string;
+  finalCopy?: CopyPackage;
+  finalProductDesign: { imageUrl: string; cmf: { colorScheme: string[]; material: string; finish: string } };
+  boxTypeId?: string;
   boxType?: BoxType;
   basePackagingId?: string;
   basePackagingImageUrl?: string;
@@ -86,7 +88,7 @@ export interface BoxType {
   costLevel: 1 | 2 | 3 | 4;
   costLabel: string;
   description: string;
-  source?: "builtin" | "upload";
+  source?: "builtin" | "upload" | "ai";
   referenceImageUrl?: string;
   referenceAnalysis?: PackagingReferenceAnalysis;
 }
@@ -110,7 +112,7 @@ export interface PackagingPromptOption {
 }
 
 export interface PackagingProjectState {
-  promptVersion: 2;
+  promptVersion: 3;
   selectedBoxTypeId?: string;
   uploadedBoxType?: BoxType;
   structureConfirmed?: boolean;
@@ -127,8 +129,9 @@ export interface PackagingProjectState {
 }
 
 export const emptyPackagingProject = (): PackagingProjectState => ({
-  promptVersion: 2,
-  candidates: [], favoriteIds: [], generationRound: 0, structureConfirmed: false,
+  promptVersion: 3,
+  selectedBoxTypeId: aiGeneratedPackagingBoxTypeId,
+  candidates: [], favoriteIds: [], generationRound: 0,
   designRequirement: "", promptDirectionCount: 3, promptOptions: [],
   generationPrompt: "", generationCount: 3,
 });
