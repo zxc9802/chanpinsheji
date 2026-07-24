@@ -31,3 +31,11 @@ test("document import exposes an upstream dependency failure without a gateway 5
   const route = await readFile(new URL("../app/api/ai/copy/route.ts", import.meta.url), "utf8");
   assert.match(route, /AI 上游调用失败.*status:424/);
 });
+
+test("image route starts work asynchronously and exposes poll status", async () => {
+  const route = await readFile(new URL("../app/api/ai/image/route.ts", import.meta.url), "utf8");
+  assert.match(route, /export async function GET/);
+  assert.match(route, /status:\s*202/);
+  assert.match(route, /jobId/);
+  assert.match(route, /imageJobManager\.enqueue/);
+});
