@@ -1,8 +1,28 @@
 import { aiServerConfig, type ImageProviderName } from "@/lib/ai-config";
+import { ImageJobManager, type ImageJobResult } from "@/lib/image-job-manager";
 import { fetchAiForm, fetchAiJson } from "@/lib/server-ai-client";
 
 type ImagePayload = { data?: { url?: string; b64_json?: string }[]; usage?: { generated_images?: number; total_tokens?: number } };
 type ImageRequest = { prompts?: string[]; provider?: ImageProviderName; referenceImages?: (string | undefined)[]; referenceImageGroups?: string[][]; size?:string; quality?:"low"|"medium"|"high" };
+type NormalizedImageRequest = {
+  prompts: string[];
+  provider: "doubao" | "yunwu";
+  referenceImages: (string | undefined)[];
+  referenceImageGroups: string[][];
+  size?: string;
+  quality?: "low" | "medium" | "high";
+};
+
+class ImageRequestError extends Error {
+  constructor(message: string, readonly status: number) {
+    super(message);
+  }
+}
+
+const imageJobRuntime = globalThis as typeof globalThis & {
+  __packPilotImageJobManager?: ImageJobManager<NormalizedImageRequest>;
+};
+const imageJobManager = imageJobRuntime.__packPilotImageJobManager ??= new ImageJobManager<NormalizedImageRequest>();
 
 function imageUrl(payload: ImagePayload) {
   const item = payload.data?.[0];
@@ -57,29 +77,46 @@ async function generateInBatches(prompts: string[], provider: "doubao" | "yunwu"
   return results;
 }
 
+function normalizeImageRequest(body: ImageRequest): NormalizedImageRequest {
+  const provider = body.provider === "doubao" ? "doubao" : "yunwu";
+  if (provider === "yunwu" && (!aiServerConfig.yunwu.apiKey || !aiServerConfig.yunwu.imageModel)) throw new ImageRequestError("云雾图像密钥或模型未配置", 503);
+  if (provider === "doubao" && (!aiServerConfig.doubao.apiKey || !aiServerConfig.doubao.imageModel)) throw new ImageRequestError("豆包 Ark 密钥或图像模型 ID 未配置", 503);
+  const prompts = (body.prompts || []).slice(0, 20).map(String).filter(Boolean);
+  if (!prompts.length) throw new ImageRequestError("缺少图像提示词", 400);
+  const referenceImages=(body.referenceImages||[]).slice(0,prompts.length).map(value=>typeof value==="string"&&(value.startsWith("data:image/")||/^https:\/\//i.test(value))?value:undefined);
+  const referenceImageGroups=(body.referenceImageGroups||[]).slice(0,prompts.length).map(group=>(Array.isArray(group)?group:[]).filter(value=>typeof value==="string"&&(value.startsWith("data:image/")||/^https:\/\//i.test(value))).slice(0,10));
+  const size=typeof body.size==="string"&&/^(1024x1024|1024x1536|1536x1024|2K)$/.test(body.size)?body.size:undefined;
+  const quality=["low","medium","high"].includes(body.quality||"")?body.quality:undefined;
+  return { prompts, provider, referenceImages, referenceImageGroups, size, quality };
+}
+
+async function runImageJob(body: NormalizedImageRequest): Promise<ImageJobResult> {
+  const results = await generateInBatches(body.prompts, body.provider, body.referenceImages, body.referenceImageGroups, body.size, body.quality);
+  const images = results.map((result) => result.status === "fulfilled" ? imageUrl(result.value.data) : undefined);
+  const succeeded = images.filter(Boolean).length;
+  if (succeeded / body.prompts.length <= .5) {
+    const reason=results.find((result):result is PromiseRejectedResult=>result.status==="rejected")?.reason;
+    const detail=reason instanceof Error?reason.message:typeof reason==="string"?reason:"服务未返回图片";
+    throw new Error(`图像生成成功率 ${Math.round(succeeded / body.prompts.length * 100)}%。原因：${detail}`);
+  }
+  const durationMs = Math.max(...results.flatMap((result) => result.status === "fulfilled" ? [result.value.usage.durationMs] : [0]));
+  return { data: images, usage: { provider: body.provider, durationMs, images: succeeded } };
+}
+
 export async function POST(request: Request) {
   try {
-    const body = await request.json() as ImageRequest;
-    const provider = body.provider === "doubao" ? "doubao" : "yunwu";
-    if (provider === "yunwu" && (!aiServerConfig.yunwu.apiKey || !aiServerConfig.yunwu.imageModel)) return Response.json({ error: "云雾图像密钥或模型未配置" }, { status: 503 });
-    if (provider === "doubao" && (!aiServerConfig.doubao.apiKey || !aiServerConfig.doubao.imageModel)) return Response.json({ error: "豆包 Ark 密钥或图像模型 ID 未配置" }, { status: 503 });
-    const prompts = (body.prompts || []).slice(0, 20).map(String).filter(Boolean);
-    if (!prompts.length) return Response.json({ error: "缺少图像提示词" }, { status: 400 });
-    const referenceImages=(body.referenceImages||[]).slice(0,prompts.length).map(value=>typeof value==="string"&&(value.startsWith("data:image/")||/^https:\/\//i.test(value))?value:undefined);
-    const referenceImageGroups=(body.referenceImageGroups||[]).slice(0,prompts.length).map(group=>(Array.isArray(group)?group:[]).filter(value=>typeof value==="string"&&(value.startsWith("data:image/")||/^https:\/\//i.test(value))).slice(0,10));
-    const size=typeof body.size==="string"&&/^(1024x1024|1024x1536|1536x1024|2K)$/.test(body.size)?body.size:undefined;
-    const quality=["low","medium","high"].includes(body.quality||"")?body.quality:undefined;
-    const results = await generateInBatches(prompts, provider, referenceImages,referenceImageGroups,size,quality);
-    const images = results.map((result) => result.status === "fulfilled" ? imageUrl(result.value.data) : undefined);
-    const succeeded = images.filter(Boolean).length;
-    if (succeeded / prompts.length <= .5) {
-      const reason=results.find((result):result is PromiseRejectedResult=>result.status==="rejected")?.reason;
-      const detail=reason instanceof Error?reason.message:typeof reason==="string"?reason:"服务未返回图片";
-      throw new Error(`图像生成成功率 ${Math.round(succeeded / prompts.length * 100)}%。原因：${detail}`);
-    }
-    const durationMs = Math.max(...results.flatMap((result) => result.status === "fulfilled" ? [result.value.usage.durationMs] : [0]));
-    return Response.json({ data: images, usage: { provider, durationMs, images: succeeded } });
+    const body = normalizeImageRequest(await request.json() as ImageRequest);
+    const job = imageJobManager.enqueue(body, () => runImageJob(body));
+    return Response.json({ jobId: job.id, status: job.status }, { status: 202 });
   } catch (error) {
-    return Response.json({ error: error instanceof Error ? error.message : "图像生成失败" }, { status: 502 });
+    return Response.json({ error: error instanceof Error ? error.message : "图像任务创建失败" }, { status: error instanceof ImageRequestError ? error.status : 400 });
   }
+}
+
+export async function GET(request: Request) {
+  const jobId = new URL(request.url).searchParams.get("jobId");
+  if (!jobId) return Response.json({ error: "缺少图像任务 ID" }, { status: 400 });
+  const job = imageJobManager.get(jobId);
+  if (!job) return Response.json({ error: "图像任务不存在或已过期，请重新生成" }, { status: 404 });
+  return Response.json(job);
 }
