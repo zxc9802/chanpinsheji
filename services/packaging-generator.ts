@@ -1,4 +1,4 @@
-import type { BoxType, PackagingCandidate, PackagingFace, PackagingGenParams } from "@/types/packaging";
+import { aiGeneratedPackagingBoxTypeId, type BoxType, type PackagingCandidate, type PackagingFace, type PackagingGenParams } from "@/types/packaging";
 import type { DesignBrief } from "@/types/design-brief";
 import { aiErrorMessage, callAi, getAiProvider } from "@/lib/ai-client";
 import { emitAiNotice } from "@/lib/ai-usage";
@@ -32,6 +32,20 @@ export const boxTypes: BoxType[] = rawBoxes.map(([id,name,dims,level,categories,
   costLabel: ["经济","标准","进阶","高端"][level - 1], suitableCategories: [...categories], description,
   structureImageUrl: structureSvg(name,index), dielineImageUrl: structureSvg(name,index,true), source:"builtin",
 }));
+
+export const aiGeneratedBoxType: BoxType = {
+  id: aiGeneratedPackagingBoxTypeId,
+  name: "AI 自由设计外包装",
+  structureImageUrl: structureSvg("AI 自由设计外包装", 0),
+  dielineImageUrl: structureSvg("AI 自由设计外包装", 0, true),
+  suitableCategories: [],
+  referenceDimensions: [0, 0, 0],
+  referenceDimensionsLabel: "由 AI 根据产品与设计要求推导",
+  costLevel: 3,
+  costLabel: "待评估",
+  description: "外包装结构由 AI 根据用户设计要求自行规划",
+  source: "ai",
+};
 
 const numbers = (value?: string) => (value?.match(/\d+(?:\.\d+)?/g) || []).map(Number);
 const priceCeiling = (value: string) => numbers(value).at(-1) || 0;

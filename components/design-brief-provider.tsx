@@ -8,8 +8,8 @@ import { emptyCopyProject, type BrandCopyAsset, type CopyPackage, type CopyProje
 import type { BrandAsset } from "@/types/brand-assets";
 import { emptyProductDesignState, type ProductDesignState } from "@/types/product-design";
 import { defaultDirectionSnapshot, fixedProductPresentationLayout } from "@/services/product-design-diversity";
-import { emptyPackagingProject, type PackagingProjectState } from "@/types/packaging";
-import { boxTypes } from "@/services/packaging-generator";
+import { aiGeneratedPackagingBoxTypeId, emptyPackagingProject, type PackagingProjectState } from "@/types/packaging";
+import { aiGeneratedBoxType, boxTypes } from "@/services/packaging-generator";
 import { containerTypes } from "@/services/container-library";
 import { emptyMarketingImageProject, type MarketingImageProjectState } from "@/types/marketing-image";
 import { emptyDeliveryState, type DeliveryState, type ExportRecord, type ProjectTemplate, type QualityCheckItem } from "@/types/delivery";
@@ -94,19 +94,18 @@ function migrateProductDesign(input:ProductDesignState):ProductDesignState{
 }
 
 function migratePackagingProject(input:PackagingProjectState):PackagingProjectState{
-  const isCurrent=input.promptVersion===2;
   return{
     ...emptyPackagingProject(),
     ...input,
-    promptVersion:2,
+    promptVersion:3,
+    selectedBoxTypeId:aiGeneratedPackagingBoxTypeId,
+    uploadedBoxType:undefined,
+    structureConfirmed:undefined,
     candidates:input.candidates||[],
     favoriteIds:input.favoriteIds||[],
-    promptOptions:isCurrent?(input.promptOptions||[]).map((item)=>({
-      ...item,
-      subjectType:"outer_package" as const,
-      structureSummary:item.structureSummary||input.uploadedBoxType?.referenceAnalysis?.structureSummary||input.uploadedBoxType?.description||"",
-    })):[],
-    generationPrompt:isCurrent?(input.generationPrompt||""):"",
+    promptOptions:[],
+    generationPrompt:"",
+    generationCount:Math.max(1,Math.min(5,input.generationCount||3)),
   };
 }
 
@@ -393,19 +392,12 @@ export function DesignBriefProvider({ children }: { children: React.ReactNode })
   const finalizePackaging = useCallback((candidateId: string) => {
     setState((old) => {
       const candidate = old.packagingProject.candidates.find((item) => item.id === candidateId);
-      const boxType = old.packagingProject.uploadedBoxType?.id === candidate?.boxTypeId
-        ? old.packagingProject.uploadedBoxType
-        : boxTypes.find((item) => item.id === candidate?.boxTypeId);
-      if (!candidate || !boxType) return old;
-      if(
-        candidate.subjectReviewStatus==="completed"
-        && (
-          !candidate.subjectReview?.outerPackageCorrect
-          || !candidate.subjectReview?.structureViewsPure
-          || (candidate.subjectReview?.structureSimilarity??0)<60
-          || (candidate.subjectReview?.productDominance??100)>45
-        )
-      )return old;
+      const boxType = candidate?.boxTypeId === aiGeneratedBoxType.id
+        ? aiGeneratedBoxType
+        : old.packagingProject.uploadedBoxType?.id === candidate?.boxTypeId
+          ? old.packagingProject.uploadedBoxType
+          : boxTypes.find((item) => item.id === candidate?.boxTypeId) || aiGeneratedBoxType;
+      if (!candidate) return old;
       return {
         ...old,
         packagingProject: {
