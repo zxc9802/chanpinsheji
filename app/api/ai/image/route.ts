@@ -1,5 +1,6 @@
 import { aiServerConfig, type ImageProviderName } from "@/lib/ai-config";
 import { ImageJobManager, type ImageJobResult } from "@/lib/image-job-manager";
+import { currentBillingUserId } from "@/lib/main-app-billing";
 import { fetchAiForm, fetchAiJson } from "@/lib/server-ai-client";
 
 type ImagePayload = { data?: { url?: string; b64_json?: string }[]; usage?: { generated_images?: number; total_tokens?: number } };
@@ -12,6 +13,7 @@ type NormalizedImageRequest = {
   size?: string;
   quality?: "low" | "medium" | "high";
 };
+type QueuedImageRequest = NormalizedImageRequest & { billingUserId: string };
 
 class ImageRequestError extends Error {
   constructor(message: string, readonly status: number) {
@@ -20,9 +22,9 @@ class ImageRequestError extends Error {
 }
 
 const imageJobRuntime = globalThis as typeof globalThis & {
-  __packPilotImageJobManager?: ImageJobManager<NormalizedImageRequest>;
+  __packPilotImageJobManager?: ImageJobManager<QueuedImageRequest>;
 };
-const imageJobManager = imageJobRuntime.__packPilotImageJobManager ??= new ImageJobManager<NormalizedImageRequest>();
+const imageJobManager = imageJobRuntime.__packPilotImageJobManager ??= new ImageJobManager<QueuedImageRequest>();
 
 function imageUrl(payload: ImagePayload) {
   const item = payload.data?.[0];
@@ -31,10 +33,10 @@ function imageUrl(payload: ImagePayload) {
   return undefined;
 }
 
-async function generateOne(prompt: string, provider: "doubao" | "yunwu", referenceImages:string[]=[],size?:string,quality?:"low"|"medium"|"high") {
+async function generateOne(prompt: string, provider: "doubao" | "yunwu", referenceImages:string[]=[],size?:string,quality?:"low"|"medium"|"high",billingUserId?:string) {
   const referenceImage=referenceImages[0];
   if (provider === "yunwu") {
-    if(referenceImage){const form=new FormData();form.append("model",aiServerConfig.yunwu.imageModel);form.append("prompt",prompt);for(const [index,url] of referenceImages.slice(0,10).entries()){const source=await fetch(url);if(!source.ok)throw new Error(`参考图 ${index+1} 读取失败：HTTP ${source.status}`);const blob=await source.blob();form.append(referenceImages.length>1?"image[]":"image",new File([blob],`reference-${index+1}.png`,{type:blob.type||"image/png"}));}form.append("n","1");form.append("size",size||aiServerConfig.yunwu.imageSize);form.append("quality",quality||aiServerConfig.yunwu.imageQuality);form.append("output_format","jpeg");return fetchAiForm<ImagePayload>({url:`${aiServerConfig.yunwu.baseUrl.replace(/\/$/,"")}/v1/images/edits`,apiKey:aiServerConfig.yunwu.apiKey,provider:"yunwu",generator:"image-edit",timeoutMs:120000,form});}
+    if(referenceImage){const form=new FormData();form.append("model",aiServerConfig.yunwu.imageModel);form.append("prompt",prompt);for(const [index,url] of referenceImages.slice(0,10).entries()){const source=await fetch(url);if(!source.ok)throw new Error(`参考图 ${index+1} 读取失败：HTTP ${source.status}`);const blob=await source.blob();form.append(referenceImages.length>1?"image[]":"image",new File([blob],`reference-${index+1}.png`,{type:blob.type||"image/png"}));}form.append("n","1");form.append("size",size||aiServerConfig.yunwu.imageSize);form.append("quality",quality||aiServerConfig.yunwu.imageQuality);form.append("output_format","jpeg");return fetchAiForm<ImagePayload>({url:`${aiServerConfig.yunwu.baseUrl.replace(/\/$/,"")}/v1/images/edits`,apiKey:aiServerConfig.yunwu.apiKey,provider:"yunwu",generator:"image-edit",timeoutMs:120000,form,billingUserId});}
     return fetchAiJson<ImagePayload>({
       url: `${aiServerConfig.yunwu.baseUrl.replace(/\/$/, "")}/v1/images/generations`,
       apiKey: aiServerConfig.yunwu.apiKey,
@@ -49,6 +51,7 @@ async function generateOne(prompt: string, provider: "doubao" | "yunwu", referen
         quality: quality||aiServerConfig.yunwu.imageQuality,
         format: "jpeg",
       },
+      billingUserId,
     });
   }
   return fetchAiJson<ImagePayload>({
@@ -66,14 +69,15 @@ async function generateOne(prompt: string, provider: "doubao" | "yunwu", referen
       watermark: false,
       ...(referenceImages.length?{image:referenceImages.length===1?referenceImage:referenceImages}:{}),
     },
+    billingUserId,
   });
 }
 
-async function generateInBatches(prompts: string[], provider: "doubao" | "yunwu", referenceImages:(string|undefined)[],referenceImageGroups:string[][],size?:string,quality?:"low"|"medium"|"high",onImage?: (index:number,result:Awaited<ReturnType<typeof generateOne>>) => void) {
+async function generateInBatches(prompts: string[], provider: "doubao" | "yunwu", referenceImages:(string|undefined)[],referenceImageGroups:string[][],size?:string,quality?:"low"|"medium"|"high",billingUserId?:string,onImage?: (index:number,result:Awaited<ReturnType<typeof generateOne>>) => void) {
   const results: PromiseSettledResult<Awaited<ReturnType<typeof generateOne>>>[] = [];
   for (let index = 0; index < prompts.length; index += 3) {
     results.push(...await Promise.allSettled(prompts.slice(index, index + 3).map(async (prompt,offset) => {
-      const result=await generateOne(prompt, provider, referenceImageGroups[index+offset]?.length?referenceImageGroups[index+offset]:referenceImages[index+offset]?[referenceImages[index+offset]!]:[],size,quality);
+      const result=await generateOne(prompt, provider, referenceImageGroups[index+offset]?.length?referenceImageGroups[index+offset]:referenceImages[index+offset]?[referenceImages[index+offset]!]:[],size,quality,billingUserId);
       onImage?.(index+offset,result);
       return result;
     })));
@@ -94,10 +98,10 @@ function normalizeImageRequest(body: ImageRequest): NormalizedImageRequest {
   return { prompts, provider, referenceImages, referenceImageGroups, size, quality };
 }
 
-async function runImageJob(body: NormalizedImageRequest,publishProgress?: (result:ImageJobResult) => void): Promise<ImageJobResult> {
+async function runImageJob(body: QueuedImageRequest,publishProgress?: (result:ImageJobResult) => void): Promise<ImageJobResult> {
   const images:(string|undefined)[]=Array.from({length:body.prompts.length});
   let durationMs=0;
-  const results = await generateInBatches(body.prompts, body.provider, body.referenceImages, body.referenceImageGroups, body.size, body.quality,(index,result)=>{
+  const results = await generateInBatches(body.prompts, body.provider, body.referenceImages, body.referenceImageGroups, body.size, body.quality,body.billingUserId,(index,result)=>{
     images[index]=imageUrl(result.data);
     durationMs=Math.max(durationMs,result.usage.durationMs);
     publishProgress?.({data:[...images],usage:{provider:body.provider,durationMs,images:images.filter(Boolean).length}});
@@ -115,7 +119,10 @@ async function runImageJob(body: NormalizedImageRequest,publishProgress?: (resul
 
 export async function POST(request: Request) {
   try {
-    const body = normalizeImageRequest(await request.json() as ImageRequest);
+    const body: QueuedImageRequest = {
+      ...normalizeImageRequest(await request.json() as ImageRequest),
+      billingUserId: await currentBillingUserId(),
+    };
     const job = imageJobManager.enqueue(body, (publishProgress) => runImageJob(body,publishProgress));
     return Response.json({ jobId: job.id, status: job.status }, { status: 202 });
   } catch (error) {

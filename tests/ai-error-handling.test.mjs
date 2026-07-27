@@ -12,7 +12,7 @@ test("server AI client reports an upstream HTML response without a JSON parser e
   console.error = () => {};
   try {
     await assert.rejects(
-      () => fetchAiJson({ url: "https://model.example/v1/chat/completions", apiKey: "test", body: {}, timeoutMs: 1, provider: "openai", generator: "copy" }),
+      () => fetchAiJson({ url: "https://model.example/v1/chat/completions", apiKey: "test", body: {}, timeoutMs: 1, provider: "openai", generator: "copy", billingEnabled: false }),
       /AI 上游返回 HTTP 502.*upstream unavailable/,
     );
   } finally {
