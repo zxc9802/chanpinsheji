@@ -359,3 +359,25 @@ test("delivery exports exactly three core images and three project documents",as
   assert.match(quality,/核心视觉资产/);
   assert.match(provider,/completedSteps: \[\.\.\.new Set\(\[\.\.\.old\.completedSteps\.filter\(\(step\) => step <= 5\), 6\]\)\]/);
 });
+
+test("step one document import always uses OpenLux gpt-5.6-luna",async()=>{
+  const [config,importer,route,form,prompt]=await Promise.all([
+    read("../lib/ai-config.ts"),
+    read("../services/document-brief-importer.ts"),
+    read("../app/api/ai/copy/route.ts"),
+    read("../components/brief-form.tsx"),
+    read("../services/prompts/brief-import-prompt.ts"),
+  ]);
+  assert.match(config,/model: process\.env\.OPENLUX_MODEL \|\| "gpt-5.6-luna"/);
+  assert.match(config,/https:\/\/api\.openlux\.ai\/v1/);
+  assert.match(importer,/provider: "openlux"/);
+  assert.match(importer,/importBriefFromImages/);
+  assert.doesNotMatch(importer,/getAiProvider\("copy"\)/);
+  assert.match(route,/provider==="openlux"/);
+  assert.match(route,/"openlux","brief-import"/);
+  assert.match(route,/image_url/);
+  assert.match(prompt,/briefImportImageSystemPrompt/);
+  assert.match(form,/gpt-5\.6-luna/);
+  assert.match(form,/导入文档 \/ 图片/);
+  assert.match(form,/importBriefFromImages/);
+});

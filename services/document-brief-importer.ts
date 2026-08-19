@@ -1,9 +1,17 @@
 import JSZip from "jszip";
 import type { DesignBrief } from "@/types/design-brief";
-import { callAi, getAiProvider } from "@/lib/ai-client";
+import { callAi } from "@/lib/ai-client";
 
 const MAX_FILE_SIZE = 15 * 1024 * 1024;
 const MAX_TEXT_LENGTH = 60000;
+const MAX_IMAGE_EDGE = 1600;
+export const MAX_BRIEF_IMAGES = 6;
+export const IMAGE_EXTENSIONS = ["png", "jpg", "jpeg", "webp", "gif"] as const;
+
+export function isBriefImageFile(file: File) {
+  const extension = file.name.split(".").pop()?.toLowerCase() || "";
+  return file.type.startsWith("image/") || IMAGE_EXTENSIONS.includes(extension as (typeof IMAGE_EXTENSIONS)[number]);
+}
 
 function cleanText(value: string) {
   return value.replace(/\u0000/g, "").replace(/[ \t]+\n/g, "\n").replace(/\n{4,}/g, "\n\n\n").trim();
@@ -50,7 +58,53 @@ export async function extractDocumentText(file: File) {
 
 export async function importBriefFromDocument(file: File, projectId: string): Promise<{ brief: DesignBrief; truncated: boolean; sourceLength: number }> {
   const { text, truncated, sourceLength } = await extractDocumentText(file);
-  const provider = await getAiProvider("copy");
-  const brief = await callAi<DesignBrief>("brief", "copy", { action: "brief-import", provider, params: { documentText: text, projectId, fileName: file.name } });
+  const brief = await callAi<DesignBrief>("brief", "copy", { action: "brief-import", provider: "openlux", params: { documentText: text, projectId, fileName: file.name } });
   return { brief, truncated, sourceLength };
+}
+
+function loadImageElement(file: File) {
+  return new Promise<HTMLImageElement>((resolve, reject) => {
+    const image = new Image();
+    const url = URL.createObjectURL(file);
+    image.onload = () => { URL.revokeObjectURL(url); resolve(image); };
+    image.onerror = () => { URL.revokeObjectURL(url); reject(new Error(`${file.name} 不是可识别的图片`)); };
+    image.src = url;
+  });
+}
+
+async function compressImageForBrief(file: File) {
+  if (typeof document === "undefined") {
+    return new Promise<string>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result || ""));
+      reader.onerror = () => reject(new Error(`${file.name} 读取失败`));
+      reader.readAsDataURL(file);
+    });
+  }
+  const image = await loadImageElement(file);
+  const scale = Math.min(1, MAX_IMAGE_EDGE / Math.max(image.naturalWidth, image.naturalHeight));
+  const canvas = document.createElement("canvas");
+  canvas.width = Math.max(1, Math.round(image.naturalWidth * scale));
+  canvas.height = Math.max(1, Math.round(image.naturalHeight * scale));
+  const context = canvas.getContext("2d");
+  if (!context) throw new Error(`${file.name} 无法压缩，请换一张图`);
+  context.drawImage(image, 0, 0, canvas.width, canvas.height);
+  return canvas.toDataURL("image/jpeg", 0.82);
+}
+
+export async function importBriefFromImages(files: File[], projectId: string): Promise<{ brief: DesignBrief; sourceLength: number }> {
+  if (!files.length) throw new Error("请至少上传一张图片");
+  if (files.length > MAX_BRIEF_IMAGES) throw new Error(`一次最多上传 ${MAX_BRIEF_IMAGES} 张图片`);
+  const images = [];
+  for (const file of files) {
+    if (file.size > MAX_FILE_SIZE) throw new Error(`${file.name} 超过 15MB，请压缩后重新上传`);
+    if (!isBriefImageFile(file)) throw new Error(`${file.name} 不是支持的图片格式`);
+    images.push({ name: file.name, dataUrl: await compressImageForBrief(file) });
+  }
+  const brief = await callAi<DesignBrief>("brief", "copy", {
+    action: "brief-import",
+    provider: "openlux",
+    params: { projectId, fileName: files.map((file) => file.name).join("、"), images },
+  });
+  return { brief, sourceLength: files.length };
 }

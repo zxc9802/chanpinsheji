@@ -1,7 +1,13 @@
 export type CopyProviderName = "deepseek" | "gemini";
 export type ImageProviderName = "doubao" | "yunwu";
+export type DocumentProviderName = "openlux";
 
 export const aiServerConfig = {
+  openlux: {
+    apiKey: process.env.OPENLUX_API_KEY || "",
+    baseUrl: process.env.OPENLUX_BASE_URL || "https://api.openlux.ai/v1",
+    model: process.env.OPENLUX_MODEL || "gpt-5.6-luna",
+  },
   deepseek: {
     apiKey: process.env.DEEPSEEK_API_KEY || "",
     baseUrl: process.env.DEEPSEEK_BASE_URL || "https://api.deepseek.com",

@@ -6,7 +6,7 @@ import { exampleDesignBrief } from "@/lib/example-design-brief";
 import type { DesignBrief } from "@/types/design-brief";
 import { useDesignBrief } from "./design-brief-provider";
 import { TagInput } from "./tag-input";
-import { importBriefFromDocument } from "@/services/document-brief-importer";
+import { importBriefFromDocument, importBriefFromImages, isBriefImageFile } from "@/services/document-brief-importer";
 
 const industries = ["美妆护肤", "食品饮料", "健康保健", "家居日化", "宠物用品", "消费电子", "其他"];
 const categories = ["精华液", "面霜", "面膜", "洁面", "香水", "饮料", "食品", "其他"];
@@ -100,25 +100,36 @@ export function BriefForm() {
     }
   };
 
-  const importFile = async (file?: File) => {
-    if (!file || importing) return;
+  const importFiles = async (incoming?: FileList | File[] | null) => {
+    const files = incoming ? [...incoming] : [];
+    if (!files.length || importing) return;
     setImportError(""); setImporting(true);
     try {
-      const extension=file.name.split(".").pop()?.toLowerCase();
-      if(extension==="json"){
-        importBrief(await file.text());
-        setImportNotice(`已从 ${file.name} 填写 Design Brief。`);
-      }else if(extension==="docx"||extension==="pdf"){
-        const result=await importBriefFromDocument(file,brief.projectId||`project-${Date.now()}`);
+      const projectId = brief.projectId || `project-${Date.now()}`;
+      if (files.every(isBriefImageFile)) {
+        const result = await importBriefFromImages(files, projectId);
         importBrief(result.brief);
-        setImportNotice(`已从 ${file.name} 识别并填写表单${result.truncated?"；文档较长，仅分析了前 60000 个字符":""}。`);
-      }else if(extension==="doc"){
-        throw new Error("暂不支持旧版 .doc，请在 Word 中另存为 .docx 后导入");
-      }else{
-        throw new Error("仅支持 .docx、.pdf 或 .json 文件");
+        setImportNotice(`已从 ${files.length} 张图片识别并填写表单，所有字段仍可修改。`);
+      } else if (files.length > 1) {
+        throw new Error("一次只能导入同一类文件。多张图片可一起上传；Word、PDF、JSON 请单独导入。");
+      } else {
+        const file = files[0];
+        const extension = file.name.split(".").pop()?.toLowerCase();
+        if (extension === "json") {
+          importBrief(await file.text());
+          setImportNotice(`已从 ${file.name} 填写 Design Brief。`);
+        } else if (extension === "docx" || extension === "pdf") {
+          const result = await importBriefFromDocument(file, projectId);
+          importBrief(result.brief);
+          setImportNotice(`已从 ${file.name} 识别并填写表单${result.truncated ? "；文档较长，仅分析了前 60000 个字符" : ""}。`);
+        } else if (extension === "doc") {
+          throw new Error("暂不支持旧版 .doc，请在 Word 中另存为 .docx 后导入");
+        } else {
+          throw new Error("仅支持 JPG / PNG / WEBP、Word .docx、PDF 或 JSON");
+        }
       }
       setErrors({});setImportOpen(false);setImportText("");
-    }catch(error){setImportError(error instanceof Error?error.message:"文档导入失败");}
+    }catch(error){setImportError(error instanceof Error?error.message:"导入失败");}
     finally{setImporting(false);if(fileInputRef.current)fileInputRef.current.value="";}
   };
 
@@ -128,7 +139,7 @@ export function BriefForm() {
     <>
       <div className="page-heading">
         <div><span className="eyebrow">STEP 1 / 6</span><h1>品牌与产品定位</h1><p>梳理品牌、产品与消费者信息，为整套包装设计建立清晰的创意基准。</p></div>
-        <button className="import-button" type="button" onClick={() => {setImportOpen(true);setImportError("");}}><span>↓</span> 导入 Word / PDF</button>
+        <button className="import-button" type="button" onClick={() => {setImportOpen(true);setImportError("");}}><span>↓</span> 导入文档 / 图片</button>
       </div>
 
       {importNotice&&<div className="document-import-notice"><span>✓</span><p>{importNotice}</p><button type="button" onClick={()=>setImportNotice("")} aria-label="关闭提示">×</button></div>}
@@ -190,11 +201,11 @@ export function BriefForm() {
 
       {importOpen && <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setImportOpen(false); }}>
         <section className="import-modal" role="dialog" aria-modal="true" aria-labelledby="import-title">
-          <div className="modal-head"><div><span className="eyebrow">DOCUMENT IMPORT</span><h2 id="import-title">从文档填写 Design Brief</h2></div><button type="button" disabled={importing} onClick={() => setImportOpen(false)} aria-label="关闭">×</button></div>
-          <p>上传 Word 或 PDF，系统将提取文档内容并用当前真实文案模型填写表单。未在文档中出现的信息会保持为空。</p>
-          <input ref={fileInputRef} className="file-input-hidden" type="file" accept=".docx,.doc,.pdf,.json,application/pdf,application/json,application/vnd.openxmlformats-officedocument.wordprocessingml.document" onChange={event=>void importFile(event.target.files?.[0])}/>
-          <button className={`document-dropzone ${importing?"loading":""}`} type="button" disabled={importing} onClick={()=>fileInputRef.current?.click()} onDragOver={event=>event.preventDefault()} onDrop={event=>{event.preventDefault();void importFile(event.dataTransfer.files?.[0]);}}>
-            <span>{importing?"◌":"↥"}</span><strong>{importing?"正在读取并分析文档…":"选择文件或拖拽到这里"}</strong><small>支持 Word .docx、PDF、JSON · 最大 15MB</small>
+          <div className="modal-head"><div><span className="eyebrow">DOCUMENT IMPORT</span><h2 id="import-title">从文档或图片填写 Design Brief</h2></div><button type="button" disabled={importing} onClick={() => setImportOpen(false)} aria-label="关闭">×</button></div>
+          <p>上传包装图、产品图、Word 或 PDF，系统会用 OpenLux 的 gpt-5.6-luna 解析并填写表单。图中或文档里没有的信息会保持为空。</p>
+          <input ref={fileInputRef} className="file-input-hidden" type="file" multiple accept=".docx,.doc,.pdf,.json,.png,.jpg,.jpeg,.webp,.gif,image/png,image/jpeg,image/webp,image/gif,application/pdf,application/json,application/vnd.openxmlformats-officedocument.wordprocessingml.document" onChange={event=>void importFiles(event.target.files)}/>
+          <button className={`document-dropzone ${importing?"loading":""}`} type="button" disabled={importing} onClick={()=>fileInputRef.current?.click()} onDragOver={event=>event.preventDefault()} onDrop={event=>{event.preventDefault();void importFiles(event.dataTransfer.files);}}>
+            <span>{importing?"◌":"↥"}</span><strong>{importing?"正在读取并分析…":"选择文件或拖拽到这里"}</strong><small>支持 JPG / PNG / WEBP、Word .docx、PDF、JSON · 图片最多 6 张 · 单文件最大 15MB</small>
           </button>
           <div className="json-divider"><span>或者粘贴模块 A 导出的 JSON</span></div>
           <textarea className="json-input compact" value={importText} onChange={(e) => setImportText(e.target.value)} placeholder={'{\n  "projectId": "...",\n  "brand": { ... }\n}'} spellCheck={false} disabled={importing}/>
