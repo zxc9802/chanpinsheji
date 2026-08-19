@@ -4,6 +4,7 @@ import { useId, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { exampleDesignBrief } from "@/lib/example-design-brief";
 import type { DesignBrief } from "@/types/design-brief";
+import type { BriefFieldSource } from "@/lib/brief-field-sources";
 import { useDesignBrief } from "./design-brief-provider";
 import { TagInput } from "./tag-input";
 import { importBriefFromDocument, importBriefFromImages, isBriefImageFile } from "@/services/document-brief-importer";
@@ -17,12 +18,19 @@ const includeCurrent = (options: string[], current: string) => current && !optio
 
 type FieldErrors = Record<string, string>;
 
-function Field({ label, required, count, error, children, wide = false }: {
-  label: string; required?: boolean; count?: string; error?: string; children: React.ReactNode; wide?: boolean;
+function Field({ label, required, count, error, source, children, wide = false }: {
+  label: string; required?: boolean; count?: string; error?: string; source?: BriefFieldSource; children: React.ReactNode; wide?: boolean;
 }) {
   return (
-    <label className={`form-field ${wide ? "wide" : ""} ${error ? "has-error" : ""}`}>
-      <span className="field-label"><span>{label}{required && <b> *</b>}</span>{count && <em>{count}</em>}</span>
+    <label className={`form-field ${wide ? "wide" : ""} ${error ? "has-error" : ""} ${source === "ai" ? "is-ai" : ""}`}>
+      <span className="field-label">
+        <span>
+          {label}{required && <b> *</b>}
+          {source === "ai" && <i className="ai-field-badge">AI 生成</i>}
+          {source === "document" && <i className="doc-field-badge">文档提取</i>}
+        </span>
+        {count && <em>{count}</em>}
+      </span>
       {children}
       {error && <small className="field-error">{error}</small>}
     </label>
@@ -51,7 +59,7 @@ function CreatableSelect({ value, onChange, options, placeholder = "请选择或
 
 export function BriefForm() {
   const router = useRouter();
-  const { brief, setBrief, importBrief, completeStep, hydrated, delivery, applyTemplate } = useDesignBrief();
+  const { brief, briefFieldSources, setBrief, importBrief, importParsedBrief, markBriefFieldUser, completeStep, hydrated, delivery, applyTemplate } = useDesignBrief();
   const [errors, setErrors] = useState<FieldErrors>({});
   const [importOpen, setImportOpen] = useState(false);
   const [importText, setImportText] = useState("");
@@ -61,10 +69,15 @@ export function BriefForm() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [saved, setSaved] = useState(false);
 
-  const update = (next: DesignBrief) => { setBrief(next); setSaved(false); };
-  const brand = (key: keyof DesignBrief["brand"], value: string | string[]) => update({ ...brief, brand: { ...brief.brand, [key]: value } });
-  const product = (key: keyof DesignBrief["product"], value: string | string[] | DesignBrief["product"]["coreSellingPoints"]) => update({ ...brief, product: { ...brief.product, [key]: value } });
-  const consumer = (key: keyof DesignBrief["consumer"], value: string | string[]) => update({ ...brief, consumer: { ...brief.consumer, [key]: value } });
+  const update = (next: DesignBrief, path?: string) => {
+    setBrief(next);
+    if (path) markBriefFieldUser(path);
+    setSaved(false);
+  };
+  const brand = (key: keyof DesignBrief["brand"], value: string | string[]) => update({ ...brief, brand: { ...brief.brand, [key]: value } }, `brand.${key}`);
+  const product = (key: keyof DesignBrief["product"], value: string | string[] | DesignBrief["product"]["coreSellingPoints"]) => update({ ...brief, product: { ...brief.product, [key]: value } }, `product.${key}`);
+  const consumer = (key: keyof DesignBrief["consumer"], value: string | string[]) => update({ ...brief, consumer: { ...brief.consumer, [key]: value } }, `consumer.${key}`);
+  const sourceOf = (path: string) => briefFieldSources[path];
 
   const validate = () => {
     const required: [string, string][] = [
@@ -108,8 +121,10 @@ export function BriefForm() {
       const projectId = brief.projectId || `project-${Date.now()}`;
       if (files.every(isBriefImageFile)) {
         const result = await importBriefFromImages(files, projectId);
-        importBrief(result.brief);
-        setImportNotice(`已从 ${files.length} 张图片识别并填写表单，所有字段仍可修改。`);
+        importParsedBrief(result.brief, result.fieldSources);
+        setImportNotice(result.aiFilledCount
+          ? `已从 ${files.length} 张图片提取 ${result.extractedCount} 项，AI 补全 ${result.aiFilledCount} 项，请核对蓝色标记字段。`
+          : `已从 ${files.length} 张图片识别并填写表单，所有字段仍可修改。`);
       } else if (files.length > 1) {
         throw new Error("一次只能导入同一类文件。多张图片可一起上传；Word、PDF、JSON 请单独导入。");
       } else {
@@ -120,8 +135,10 @@ export function BriefForm() {
           setImportNotice(`已从 ${file.name} 填写 Design Brief。`);
         } else if (extension === "docx" || extension === "pdf") {
           const result = await importBriefFromDocument(file, projectId);
-          importBrief(result.brief);
-          setImportNotice(`已从 ${file.name} 识别并填写表单${result.truncated ? "；文档较长，仅分析了前 60000 个字符" : ""}。`);
+          importParsedBrief(result.brief, result.fieldSources);
+          setImportNotice(result.aiFilledCount
+            ? `已从文档提取 ${result.extractedCount} 项，AI 补全 ${result.aiFilledCount} 项，请核对蓝色标记字段。`
+            : `已从 ${file.name} 识别并填写表单${result.truncated ? "；文档较长，仅分析了前 60000 个字符" : ""}。`);
         } else if (extension === "doc") {
           throw new Error("暂不支持旧版 .doc，请在 Word 中另存为 .docx 后导入");
         } else {
@@ -150,43 +167,43 @@ export function BriefForm() {
         <section className="form-card">
           <div className="section-title"><span>01</span><div><h2>基础信息</h2><p>定义本次包装项目的基本商业背景</p></div></div>
           <div className="form-grid">
-            <Field label="品牌名称" required count={`${brief.brand.name.length}/50`} error={errors["brand.name"]}><input maxLength={50} value={brief.brand.name} onChange={(e) => brand("name", e.target.value)} placeholder="请输入品牌名称" /></Field>
-            <Field label="产品名称" required count={`${brief.product.name.length}/50`} error={errors["product.name"]}><input maxLength={50} value={brief.product.name} onChange={(e) => product("name", e.target.value)} placeholder="请输入产品名称" /></Field>
-            <Field label="所属行业" required error={errors["product.industry"]}><CreatableSelect value={brief.product.industry} onChange={(v) => product("industry", v)} options={includeCurrent(industries, brief.product.industry)} /></Field>
-            <Field label="产品品类" required error={errors["product.category"]}><CreatableSelect value={brief.product.category} onChange={(v) => product("category", v)} options={includeCurrent(categories, brief.product.category)} /></Field>
-            <Field label="目标市场" required error={errors["product.targetMarket"]}><CreatableSelect value={brief.product.targetMarket} onChange={(v) => product("targetMarket", v)} options={includeCurrent(markets, brief.product.targetMarket)} /></Field>
-            <Field label="销售渠道" required error={errors["product.salesChannel"]}><CreatableSelect value={brief.product.salesChannel} onChange={(v) => product("salesChannel", v)} options={includeCurrent(channels, brief.product.salesChannel)} /></Field>
-            <Field label="价格带" count={`${brief.product.priceBand.length}/30`}><input maxLength={30} value={brief.product.priceBand} onChange={(e) => product("priceBand", e.target.value)} placeholder="如 ¥199–299" /></Field>
+            <Field label="品牌名称" required count={`${brief.brand.name.length}/50`} error={errors["brand.name"]} source={sourceOf("brand.name")}><input maxLength={50} value={brief.brand.name} onChange={(e) => brand("name", e.target.value)} placeholder="请输入品牌名称" /></Field>
+            <Field label="产品名称" required count={`${brief.product.name.length}/50`} error={errors["product.name"]} source={sourceOf("product.name")}><input maxLength={50} value={brief.product.name} onChange={(e) => product("name", e.target.value)} placeholder="请输入产品名称" /></Field>
+            <Field label="所属行业" required error={errors["product.industry"]} source={sourceOf("product.industry")}><CreatableSelect value={brief.product.industry} onChange={(v) => product("industry", v)} options={includeCurrent(industries, brief.product.industry)} /></Field>
+            <Field label="产品品类" required error={errors["product.category"]} source={sourceOf("product.category")}><CreatableSelect value={brief.product.category} onChange={(v) => product("category", v)} options={includeCurrent(categories, brief.product.category)} /></Field>
+            <Field label="目标市场" required error={errors["product.targetMarket"]} source={sourceOf("product.targetMarket")}><CreatableSelect value={brief.product.targetMarket} onChange={(v) => product("targetMarket", v)} options={includeCurrent(markets, brief.product.targetMarket)} /></Field>
+            <Field label="销售渠道" required error={errors["product.salesChannel"]} source={sourceOf("product.salesChannel")}><CreatableSelect value={brief.product.salesChannel} onChange={(v) => product("salesChannel", v)} options={includeCurrent(channels, brief.product.salesChannel)} /></Field>
+            <Field label="价格带" count={`${brief.product.priceBand.length}/30`} source={sourceOf("product.priceBand")}><input maxLength={30} value={brief.product.priceBand} onChange={(e) => product("priceBand", e.target.value)} placeholder="如 ¥199–299" /></Field>
           </div>
         </section>
 
         <section className="form-card">
           <div className="section-title"><span>02</span><div><h2>目标消费者</h2><p>明确包装需要打动的核心人群</p></div></div>
           <div className="form-grid">
-            <Field label="年龄范围" required error={errors["consumer.ageRange"]}><CreatableSelect value={brief.consumer.ageRange} onChange={(v) => consumer("ageRange", v)} options={includeCurrent(ages, brief.consumer.ageRange)} /></Field>
+            <Field label="年龄范围" required error={errors["consumer.ageRange"]} source={sourceOf("consumer.ageRange")}><CreatableSelect value={brief.consumer.ageRange} onChange={(v) => consumer("ageRange", v)} options={includeCurrent(ages, brief.consumer.ageRange)} /></Field>
             <div />
-            <Field label="消费关键词" wide><TagInput value={brief.consumer.keywords} onChange={(v) => consumer("keywords", v)} placeholder="如 保湿、焕亮、敏感肌可用" /></Field>
+            <Field label="消费关键词" wide source={sourceOf("consumer.keywords")}><TagInput value={brief.consumer.keywords} onChange={(v) => consumer("keywords", v)} placeholder="如 保湿、焕亮、敏感肌可用" /></Field>
           </div>
         </section>
 
         <section className="form-card">
           <div className="section-title"><span>03</span><div><h2>品牌市场定位</h2><p>把品牌策略转化为可感知的性格与表达</p></div></div>
           <div className="form-grid">
-            <Field label="品牌定位" required wide count={`${brief.brand.positioning.length}/100`} error={errors["brand.positioning"]}><textarea maxLength={100} rows={3} value={brief.brand.positioning} onChange={(e) => brand("positioning", e.target.value)} placeholder="如：专研天然植萃科技的高效护肤品牌" /></Field>
-            <Field label="品牌个性" wide><TagInput value={brief.brand.personality} onChange={(v) => brand("personality", v)} placeholder="如 专业、温和、高效" /></Field>
-            <Field label="品牌主张" count={`${brief.brand.slogan.length}/50`}><input maxLength={50} value={brief.brand.slogan} onChange={(e) => brand("slogan", e.target.value)} placeholder="一句话品牌主张" /></Field>
-            <Field label="核心价值" count={`${brief.brand.coreValues.length}/100`}><textarea maxLength={100} rows={2} value={brief.brand.coreValues} onChange={(e) => brand("coreValues", e.target.value)} placeholder="品牌坚持的核心价值" /></Field>
+            <Field label="品牌定位" required wide count={`${brief.brand.positioning.length}/100`} error={errors["brand.positioning"]} source={sourceOf("brand.positioning")}><textarea maxLength={100} rows={3} value={brief.brand.positioning} onChange={(e) => brand("positioning", e.target.value)} placeholder="如：专研天然植萃科技的高效护肤品牌" /></Field>
+            <Field label="品牌个性" wide source={sourceOf("brand.personality")}><TagInput value={brief.brand.personality} onChange={(v) => brand("personality", v)} placeholder="如 专业、温和、高效" /></Field>
+            <Field label="品牌主张" count={`${brief.brand.slogan.length}/50`} source={sourceOf("brand.slogan")}><input maxLength={50} value={brief.brand.slogan} onChange={(e) => brand("slogan", e.target.value)} placeholder="一句话品牌主张" /></Field>
+            <Field label="核心价值" count={`${brief.brand.coreValues.length}/100`} source={sourceOf("brand.coreValues")}><textarea maxLength={100} rows={2} value={brief.brand.coreValues} onChange={(e) => brand("coreValues", e.target.value)} placeholder="品牌坚持的核心价值" /></Field>
           </div>
         </section>
 
         <section className="form-card">
           <div className="section-title"><span>04</span><div><h2>产品核心卖点</h2><p>提炼需要在包装上重点传达的产品价值</p></div></div>
           <div className="form-grid">
-            <Field label="核心卖点" wide><TagInput value={brief.product.coreSellingPoints.map((item) => item.point)} onChange={(values) => product("coreSellingPoints", values.map((point) => brief.product.coreSellingPoints.find((item) => item.point === point) || { point }))} placeholder="如 72 小时长效保湿" /></Field>
-            <Field label="核心功效" wide><TagInput value={brief.product.efficacy} onChange={(v) => product("efficacy", v)} placeholder="如 深层保湿、提亮肤色" /></Field>
-            <Field label="关键成分" wide><TagInput value={brief.product.keyIngredients} onChange={(v) => product("keyIngredients", v)} placeholder="如 三重玻尿酸、烟酰胺" /></Field>
-            <Field label="使用场景" count={`${brief.product.usageScenarios.length}/100`}><textarea maxLength={100} rows={3} value={brief.product.usageScenarios} onChange={(e) => product("usageScenarios", e.target.value)} placeholder="描述典型使用场景" /></Field>
-            <Field label="产品质地" count={`${brief.product.texture.length}/80`}><textarea maxLength={80} rows={3} value={brief.product.texture} onChange={(e) => product("texture", e.target.value)} placeholder="描述产品质地与肤感" /></Field>
+            <Field label="核心卖点" wide source={sourceOf("product.coreSellingPoints")}><TagInput value={brief.product.coreSellingPoints.map((item) => item.point)} onChange={(values) => product("coreSellingPoints", values.map((point) => brief.product.coreSellingPoints.find((item) => item.point === point) || { point }))} placeholder="如 72 小时长效保湿" /></Field>
+            <Field label="核心功效" wide source={sourceOf("product.efficacy")}><TagInput value={brief.product.efficacy} onChange={(v) => product("efficacy", v)} placeholder="如 深层保湿、提亮肤色" /></Field>
+            <Field label="关键成分" wide source={sourceOf("product.keyIngredients")}><TagInput value={brief.product.keyIngredients} onChange={(v) => product("keyIngredients", v)} placeholder="如 三重玻尿酸、烟酰胺" /></Field>
+            <Field label="使用场景" count={`${brief.product.usageScenarios.length}/100`} source={sourceOf("product.usageScenarios")}><textarea maxLength={100} rows={3} value={brief.product.usageScenarios} onChange={(e) => product("usageScenarios", e.target.value)} placeholder="描述典型使用场景" /></Field>
+            <Field label="产品质地" count={`${brief.product.texture.length}/80`} source={sourceOf("product.texture")}><textarea maxLength={80} rows={3} value={brief.product.texture} onChange={(e) => product("texture", e.target.value)} placeholder="描述产品质地与肤感" /></Field>
           </div>
         </section>
 
@@ -202,7 +219,7 @@ export function BriefForm() {
       {importOpen && <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setImportOpen(false); }}>
         <section className="import-modal" role="dialog" aria-modal="true" aria-labelledby="import-title">
           <div className="modal-head"><div><span className="eyebrow">DOCUMENT IMPORT</span><h2 id="import-title">从文档或图片填写 Design Brief</h2></div><button type="button" disabled={importing} onClick={() => setImportOpen(false)} aria-label="关闭">×</button></div>
-          <p>上传包装图、产品图、Word 或 PDF，系统会用 OpenLux 的 gpt-5.6-luna 解析并填写表单。图中或文档里没有的信息会保持为空。</p>
+          <p>上传包装图、产品图、Word 或 PDF，系统会先提取原文信息，再用 AI 补全空字段。AI 补全的项会标成「AI 生成」，可直接改。</p>
           <input ref={fileInputRef} className="file-input-hidden" type="file" multiple accept=".docx,.doc,.pdf,.json,.png,.jpg,.jpeg,.webp,.gif,image/png,image/jpeg,image/webp,image/gif,application/pdf,application/json,application/vnd.openxmlformats-officedocument.wordprocessingml.document" onChange={event=>void importFiles(event.target.files)}/>
           <button className={`document-dropzone ${importing?"loading":""}`} type="button" disabled={importing} onClick={()=>fileInputRef.current?.click()} onDragOver={event=>event.preventDefault()} onDrop={event=>{event.preventDefault();void importFiles(event.dataTransfer.files);}}>
             <span>{importing?"◌":"↥"}</span><strong>{importing?"正在读取并分析…":"选择文件或拖拽到这里"}</strong><small>支持 JPG / PNG / WEBP、Word .docx、PDF、JSON · 图片最多 6 张 · 单文件最大 15MB</small>

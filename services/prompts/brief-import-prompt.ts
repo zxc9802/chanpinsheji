@@ -20,6 +20,23 @@ export function buildBriefImportImagePrompt(projectId: string, fileName: string,
 {"projectId":"${projectId}","brand":{"name":"","positioning":"","personality":[],"slogan":"","coreValues":""},"product":{"name":"","category":"","industry":"","targetMarket":"","salesChannel":"","priceBand":"","coreSellingPoints":[{"point":"","sourceInsightId":"可选"}],"keyIngredients":[],"efficacy":[],"usageScenarios":"","texture":""},"consumer":{"ageRange":"","keywords":[]},"insights":[{"id":"doc-insight-001","type":"pain_point|opportunity|need","content":"","frequency":0}],"styleKeywords":[],"hardConstraints":{"maxPackageCost":"可选","dimensions":"可选"}}`;
 }
 
+export const briefFillSystemPrompt = "你是消费品品牌策略顾问。任务是补全 Design Brief 中仍然为空的字段，给后续包装设计一个可编辑的完整起点。已经有值的字段必须原样保留。品牌名称和产品名称即使为空也不得编造。必须只输出严格 JSON。";
+
+export function buildBriefFillPrompt(extractedJson: string, missingFields: string[]) {
+  return `以下是已从原文或图片提取的 Design Brief。请只补全这些空字段：${missingFields.join("、")}。
+
+## 补全规则
+1. 已有内容必须逐字保留，不得改写品牌名和产品名。
+2. 行业、品类、市场、渠道、年龄按产品给出最可能的一项。
+3. 定位、个性、主张、核心价值、卖点、功效、成分、使用场景、质地给出可上包装的简短建议，不要医疗承诺或绝对化用语。
+4. 价格带未知时给该品类常见区间，如 ¥12–19。
+5. insights 若为空，最多补 2 条，id 从 ai-insight-001 起。
+6. styleKeywords 保持空数组。
+
+严格返回完整 DesignBrief JSON：
+${extractedJson}`;
+}
+
 export function buildBriefImportPrompt(documentText: string, projectId: string, fileName: string) {
   return `请把下面文档提取为 DesignBrief JSON。
 

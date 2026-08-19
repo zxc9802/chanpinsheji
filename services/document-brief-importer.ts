@@ -1,6 +1,16 @@
 import JSZip from "jszip";
 import type { DesignBrief } from "@/types/design-brief";
 import { callAi } from "@/lib/ai-client";
+import { sourcesFromExtractedBrief, type BriefFieldSources } from "@/lib/brief-field-sources";
+
+export type BriefImportResult = {
+  brief: DesignBrief;
+  fieldSources: BriefFieldSources;
+  extractedCount: number;
+  aiFilledCount: number;
+  truncated?: boolean;
+  sourceLength: number;
+};
 
 const MAX_FILE_SIZE = 15 * 1024 * 1024;
 const MAX_TEXT_LENGTH = 60000;
@@ -56,10 +66,20 @@ export async function extractDocumentText(file: File) {
   return { text: text.slice(0, MAX_TEXT_LENGTH), truncated: text.length > MAX_TEXT_LENGTH, sourceLength: text.length };
 }
 
-export async function importBriefFromDocument(file: File, projectId: string): Promise<{ brief: DesignBrief; truncated: boolean; sourceLength: number }> {
+async function requestBriefImport(params: Record<string, unknown>, extra: Pick<BriefImportResult, "sourceLength" | "truncated">): Promise<BriefImportResult> {
+  const result = await callAi<BriefImportResult>("brief", "copy", { action: "brief-import", provider: "openlux", params });
+  return {
+    brief: result.brief,
+    fieldSources: result.fieldSources || sourcesFromExtractedBrief(result.brief),
+    extractedCount: result.extractedCount || 0,
+    aiFilledCount: result.aiFilledCount || 0,
+    ...extra,
+  };
+}
+
+export async function importBriefFromDocument(file: File, projectId: string): Promise<BriefImportResult> {
   const { text, truncated, sourceLength } = await extractDocumentText(file);
-  const brief = await callAi<DesignBrief>("brief", "copy", { action: "brief-import", provider: "openlux", params: { documentText: text, projectId, fileName: file.name } });
-  return { brief, truncated, sourceLength };
+  return requestBriefImport({ documentText: text, projectId, fileName: file.name }, { truncated, sourceLength });
 }
 
 function loadImageElement(file: File) {
@@ -92,7 +112,7 @@ async function compressImageForBrief(file: File) {
   return canvas.toDataURL("image/jpeg", 0.82);
 }
 
-export async function importBriefFromImages(files: File[], projectId: string): Promise<{ brief: DesignBrief; sourceLength: number }> {
+export async function importBriefFromImages(files: File[], projectId: string): Promise<BriefImportResult> {
   if (!files.length) throw new Error("请至少上传一张图片");
   if (files.length > MAX_BRIEF_IMAGES) throw new Error(`一次最多上传 ${MAX_BRIEF_IMAGES} 张图片`);
   const images = [];
@@ -101,10 +121,8 @@ export async function importBriefFromImages(files: File[], projectId: string): P
     if (!isBriefImageFile(file)) throw new Error(`${file.name} 不是支持的图片格式`);
     images.push({ name: file.name, dataUrl: await compressImageForBrief(file) });
   }
-  const brief = await callAi<DesignBrief>("brief", "copy", {
-    action: "brief-import",
-    provider: "openlux",
-    params: { projectId, fileName: files.map((file) => file.name).join("、"), images },
-  });
-  return { brief, sourceLength: files.length };
+  return requestBriefImport(
+    { projectId, fileName: files.map((file) => file.name).join("、"), images },
+    { sourceLength: files.length },
+  );
 }

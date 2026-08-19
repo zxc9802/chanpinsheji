@@ -3,6 +3,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import { emptyDesignBrief, type DesignBrief } from "@/types/design-brief";
 import { importDesignBrief } from "@/lib/import-design-brief";
+import { sourcesFromExtractedBrief, type BriefFieldSources } from "@/lib/brief-field-sources";
 import { emptyLogoProject, type BrandLogoAsset, type LogoProjectState, type LogoType } from "@/types/logo";
 import { emptyCopyProject, type BrandCopyAsset, type CopyPackage, type CopyProjectState } from "@/types/copy";
 import type { BrandAsset } from "@/types/brand-assets";
@@ -111,6 +112,7 @@ function migratePackagingProject(input:PackagingProjectState):PackagingProjectSt
 
 type ProjectState = {
   brief: DesignBrief;
+  briefFieldSources: BriefFieldSources;
   completedSteps: number[];
   logoProject: LogoProjectState;
   copyProject: CopyProjectState;
@@ -123,6 +125,7 @@ type ProjectState = {
 
 const createEmptyProjectState = (projectId = `project-${Date.now()}`): ProjectState => ({
   brief: { ...emptyDesignBrief(), projectId },
+  briefFieldSources: {},
   completedSteps: [],
   logoProject: emptyLogoProject(),
   copyProject: emptyCopyProject(),
@@ -137,6 +140,7 @@ function normalizeProjectState(stored: Partial<ProjectState>): ProjectState {
   const parsed = removeSimulationData(stored);
   return {
     brief: parsed.brief ? importDesignBrief(parsed.brief) : emptyDesignBrief(),
+    briefFieldSources: parsed.briefFieldSources && typeof parsed.briefFieldSources === "object" ? parsed.briefFieldSources : {},
     completedSteps: Array.isArray(parsed.completedSteps)
       ? parsed.completedSteps.filter((step): step is number => Number.isInteger(step) && step >= 1 && step <= 7)
       : [],
@@ -189,6 +193,8 @@ type DesignBriefContextValue = ProjectState & {
   switchProject: (projectId: string) => Promise<void>;
   setBrief: (brief: DesignBrief) => void;
   importBrief: (json: string | unknown) => DesignBrief;
+  importParsedBrief: (brief: DesignBrief, fieldSources?: BriefFieldSources) => void;
+  markBriefFieldUser: (path: string) => void;
   completeStep: (step: number) => void;
   updateLogoProject: (updater: (current: LogoProjectState) => LogoProjectState) => void;
   finalizeLogo: (candidateId: string) => void;
@@ -311,9 +317,19 @@ export function DesignBriefProvider({ children }: { children: React.ReactNode })
   const importBrief = useCallback((json: string | unknown) => {
     const parsed = importDesignBrief(json);
     const brief = { ...parsed, projectId: activeProjectId || parsed.projectId };
-    setState((old) => ({ ...old, brief }));
+    setState((old) => ({ ...old, brief, briefFieldSources: sourcesFromExtractedBrief(brief) }));
     return brief;
   }, [activeProjectId]);
+  const importParsedBrief = useCallback((brief: DesignBrief, fieldSources: BriefFieldSources = {}) => {
+    setState((old) => ({
+      ...old,
+      brief: { ...brief, projectId: old.brief.projectId || activeProjectId || brief.projectId },
+      briefFieldSources: fieldSources,
+    }));
+  }, [activeProjectId]);
+  const markBriefFieldUser = useCallback((path: string) => {
+    setState((old) => old.briefFieldSources[path] === "user" ? old : ({ ...old, briefFieldSources: { ...old.briefFieldSources, [path]: "user" } }));
+  }, []);
   const completeStep = useCallback((step: number) => {
     setState((old) => ({ ...old, completedSteps: [...new Set([...old.completedSteps, step])].sort() }));
   }, []);
@@ -450,8 +466,8 @@ export function DesignBriefProvider({ children }: { children: React.ReactNode })
   }, []);
 
   const value = useMemo(
-    () => ({ ...state, hydrated, storageError, projects, activeProjectId, createProject, switchProject, setBrief, importBrief, completeStep, updateLogoProject, finalizeLogo, reopenLogoSelection, updateCopyProject, finalizeCopy, reopenCopySelection, updateProductDesign, finalizeProductDesign, reopenProductDesign, updatePackagingProject, finalizePackaging, reopenPackaging, updateMarketingImages, updateQualityReport, completeExport, saveTemplate, applyTemplate }),
-    [state, hydrated, storageError, projects, activeProjectId, createProject, switchProject, setBrief, importBrief, completeStep, updateLogoProject, finalizeLogo, reopenLogoSelection, updateCopyProject, finalizeCopy, reopenCopySelection, updateProductDesign, finalizeProductDesign, reopenProductDesign, updatePackagingProject, finalizePackaging, reopenPackaging, updateMarketingImages, updateQualityReport, completeExport, saveTemplate, applyTemplate],
+    () => ({ ...state, hydrated, storageError, projects, activeProjectId, createProject, switchProject, setBrief, importBrief, importParsedBrief, markBriefFieldUser, completeStep, updateLogoProject, finalizeLogo, reopenLogoSelection, updateCopyProject, finalizeCopy, reopenCopySelection, updateProductDesign, finalizeProductDesign, reopenProductDesign, updatePackagingProject, finalizePackaging, reopenPackaging, updateMarketingImages, updateQualityReport, completeExport, saveTemplate, applyTemplate }),
+    [state, hydrated, storageError, projects, activeProjectId, createProject, switchProject, setBrief, importBrief, importParsedBrief, markBriefFieldUser, completeStep, updateLogoProject, finalizeLogo, reopenLogoSelection, updateCopyProject, finalizeCopy, reopenCopySelection, updateProductDesign, finalizeProductDesign, reopenProductDesign, updatePackagingProject, finalizePackaging, reopenPackaging, updateMarketingImages, updateQualityReport, completeExport, saveTemplate, applyTemplate],
   );
   return <DesignBriefContext.Provider value={value}>{children}</DesignBriefContext.Provider>;
 }
