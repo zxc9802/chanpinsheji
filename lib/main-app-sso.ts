@@ -104,7 +104,7 @@ export function getMainAppUrl(): string {
 }
 
 export function getPublicChanpinshejiAppUrl(): string {
-  return PUBLIC_CHANPINSHEJI_APP_URL;
+  return (process.env.PUBLIC_APP_URL?.trim() || PUBLIC_CHANPINSHEJI_APP_URL).replace(/\/+$/, '');
 }
 
 export function getMainAppSsoLaunchUrl(): string {
