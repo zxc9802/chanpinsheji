@@ -45,3 +45,7 @@ next-env.d.ts
 /outputs/
 /work/
 /.worktrees/
+
+# Server-side usage report outbox (contains employee IDs).
+.usage-outbox/
+**/.usage-outbox/
