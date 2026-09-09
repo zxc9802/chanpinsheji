@@ -1,3 +1,6 @@
+
+import { meteredFetch, isUsageReportingEnabled } from "./main-usage.ts";
+import { currentBillingUserId } from "./main-app-billing.ts";
 import {
   MainAppBillingError,
   reserveMainAppCredits,
@@ -106,6 +109,7 @@ export async function fetchAiJson<T>(
   args: FetchAiJsonArgs,
 ): Promise<{ data: T; usage: ServerAiUsage }> {
   const started = Date.now();
+  const usageFetch: typeof fetch = async (url, init) => meteredFetch(url, init, args.billingUserId || (isUsageReportingEnabled() ? await currentBillingUserId() : undefined));
   const model = modelFrom(args);
   const inputEstimate = estimatedInputTokens(args.body);
   const media = args.generator.startsWith("image");
@@ -130,7 +134,7 @@ export async function fetchAiJson<T>(
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), args.timeoutMs);
     try {
-      const response = await fetch(args.url, {
+      const response = await usageFetch(args.url, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -197,6 +201,7 @@ export async function fetchAiForm<T>(args: {
   billingUserId?: string;
 }): Promise<{ data: T; usage: ServerAiUsage }> {
   const started = Date.now();
+  const usageFetch: typeof fetch = async (url, init) => meteredFetch(url, init, args.billingUserId || (isUsageReportingEnabled() ? await currentBillingUserId() : undefined));
   const model = String(args.form.get("model") || "gpt-image-2");
   const billing = await reserveMainAppCredits({
     userId: args.billingUserId,
@@ -211,7 +216,7 @@ export async function fetchAiForm<T>(args: {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), args.timeoutMs);
     try {
-      const response = await fetch(args.url, {
+      const response = await usageFetch(args.url, {
         method: "POST",
         headers: { Authorization: `Bearer ${args.apiKey}` },
         body: args.form,
