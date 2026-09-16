@@ -11,8 +11,8 @@ test('actual image retries report separately and suppress only legacy OpenLux us
   const events=[], bills=[]; let attempts=0;
   Object.assign(process.env,{USAGE_MONITOR_INTERNAL_SECRET:'test',USAGE_MONITOR_OUTBOX_DIR:dir,MAIN_APP_URL:'https://main.test',MAIN_APP_SSO_CLIENT_SECRET:'test'});
   globalThis.fetch=async (url,init)=> {
-    if(String(url).endsWith('/api/sso/usage')) {events.push(JSON.parse(init.body)); return Response.json({ok:true});}
-    if(String(url).endsWith('/api/sso/billing')) {bills.push(JSON.parse(init.body)); return Response.json({ok:true});}
+    if(String(url).endsWith('/api/sso/usage')) {events.push(JSON.parse(init.body)); return Response.json({success:true});}
+    if(String(url).endsWith('/api/sso/billing')) {bills.push(JSON.parse(init.body)); return Response.json({success:true});}
     attempts++; return attempts===1 ? Response.json({error:{message:'retry'}},{status:503}) : Response.json({data:[{b64_json:'private-image'}],usage:{input_tokens:12,output_tokens:0,input_tokens_details:{image_tokens:9}}});
   };
   try {
