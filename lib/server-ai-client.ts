@@ -1,5 +1,9 @@
+import { providerHostname, responseStatus } from "./openlux-usage.ts";
+import { usageReporter } from "./usage-monitor.ts";
+
 import {
   MainAppBillingError,
+  currentBillingUserId,
   reserveMainAppCredits,
   type MainAppTokenUsage,
 } from "./main-app-billing.ts";
@@ -106,6 +110,9 @@ export async function fetchAiJson<T>(
   args: FetchAiJsonArgs,
 ): Promise<{ data: T; usage: ServerAiUsage }> {
   const started = Date.now();
+  const provider = providerHostname(args.url);
+  const reportingEnabled = await usageReporter.ready(args.url);
+  const usageUserId = args.billingUserId || (reportingEnabled ? await currentBillingUserId() : undefined);
   const model = modelFrom(args);
   const inputEstimate = estimatedInputTokens(args.body);
   const media = args.generator.startsWith("image");
@@ -116,9 +123,10 @@ export async function fetchAiJson<T>(
         release: async () => undefined,
       }
     : await reserveMainAppCredits({
-        userId: args.billingUserId,
+        userId: usageUserId,
+    usageReportedSeparately: reportingEnabled,
         operation: args.generator.replace(/[^a-z0-9._-]/gi, "-").toLowerCase(),
-        providerId: args.provider,
+        providerId: provider,
         model,
         estimatedInputTokens: inputEstimate,
         maxOutputTokens: maxOutputTokensFrom(args.body),
@@ -127,6 +135,8 @@ export async function fetchAiJson<T>(
   let lastError: unknown;
 
   for (let attempt = 0; attempt < 3; attempt += 1) {
+    const usageCall = await usageReporter.begin({ url: args.url, model, userId: usageUserId });
+    let upstreamPending = false;
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), args.timeoutMs);
     try {
@@ -151,6 +161,8 @@ export async function fetchAiJson<T>(
         : payload.error?.message;
       if (!response.ok) throw new Error(errorMessage || `HTTP ${response.status}`);
 
+      upstreamPending = responseStatus(response.status, payload) === "pending";
+      await usageCall?.finish(responseStatus(response.status, payload), payload, response.headers.get("x-request-id"));
       if (media) {
         await billing.settleMedia();
       } else {
@@ -160,19 +172,20 @@ export async function fetchAiJson<T>(
       return {
         data: payload,
         usage: {
-          provider: args.provider,
+          provider,
           durationMs: Date.now() - started,
           ...(exactUsage.totalTokens ? { tokens: exactUsage.totalTokens } : {}),
           ...(media ? { images: 1 } : {}),
         },
       };
     } catch (error) {
+      if (!upstreamPending) await usageCall?.finish("failed");
       lastError = error;
       if (error instanceof MainAppBillingError) {
         throw error;
       }
       console.error(
-        `[ai:${args.generator}] ${args.provider} attempt ${attempt + 1} failed:`,
+        `[ai:${args.generator}] ${provider} attempt ${attempt + 1} failed:`,
         error instanceof Error ? error.message : "unknown",
       );
       if (attempt < 2) {
@@ -197,17 +210,23 @@ export async function fetchAiForm<T>(args: {
   billingUserId?: string;
 }): Promise<{ data: T; usage: ServerAiUsage }> {
   const started = Date.now();
+  const provider = providerHostname(args.url);
+  const reportingEnabled = await usageReporter.ready(args.url);
+  const usageUserId = args.billingUserId || (reportingEnabled ? await currentBillingUserId() : undefined);
   const model = String(args.form.get("model") || "gpt-image-2");
   const billing = await reserveMainAppCredits({
-    userId: args.billingUserId,
+    userId: usageUserId,
+    usageReportedSeparately: reportingEnabled,
     operation: args.generator.replace(/[^a-z0-9._-]/gi, "-").toLowerCase(),
-    providerId: args.provider,
+    providerId: provider,
     model,
     media: true,
   });
   let lastError: unknown;
 
   for (let attempt = 0; attempt < 3; attempt += 1) {
+    const usageCall = await usageReporter.begin({ url: args.url, model, userId: usageUserId });
+    let upstreamPending = false;
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), args.timeoutMs);
     try {
@@ -219,22 +238,25 @@ export async function fetchAiForm<T>(args: {
       });
       const payload = await response.json() as T & { error?: { message?: string } };
       if (!response.ok) throw new Error(payload.error?.message || `HTTP ${response.status}`);
+      upstreamPending = responseStatus(response.status, payload) === "pending";
+      await usageCall?.finish(responseStatus(response.status, payload), payload, response.headers.get("x-request-id"));
       await billing.settleMedia();
       return {
         data: payload,
         usage: {
-          provider: args.provider,
+          provider,
           durationMs: Date.now() - started,
           images: 1,
         },
       };
     } catch (error) {
+      if (!upstreamPending) await usageCall?.finish("failed");
       lastError = error;
       if (error instanceof MainAppBillingError) {
         throw error;
       }
       console.error(
-        `[ai:${args.generator}] ${args.provider} multipart attempt ${attempt + 1} failed:`,
+        `[ai:${args.generator}] ${provider} multipart attempt ${attempt + 1} failed:`,
         error instanceof Error ? error.message : "unknown",
       );
       if (attempt < 2) {

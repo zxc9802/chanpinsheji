@@ -67,6 +67,7 @@ async function postBilling(userId: string, body: Record<string, unknown>) {
 export async function reserveMainAppCredits(input: {
   userId?: string;
   operation: string;
+  usageReportedSeparately?: boolean;
   providerId: string;
   model: string;
   estimatedInputTokens?: number;
@@ -80,6 +81,7 @@ export async function reserveMainAppCredits(input: {
     operation: input.operation,
     providerId: input.providerId,
     model: input.model,
+    ...(input.usageReportedSeparately ? { usageReportedSeparately: true } : {}),
     ...(input.media ? {
       mediaProduct: "nanobanana2",
       billableUnits: 1,
