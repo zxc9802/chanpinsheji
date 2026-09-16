@@ -8,7 +8,7 @@ test('D1 persists failed reports and a new reporter drains them after restart', 
   const sqlite=new DatabaseSync(':memory:');
   const database={prepare(sql) {let params=[]; return {bind(...values){params=values;return this;}, async run(){return sqlite.prepare(sql).run(...params);}, async all(){return {results:sqlite.prepare(sql).all(...params)};}};}};
   let online=false; const delivered=[];
-  const options={tool:'chanpinsheji',getMainAppUrl:()=> 'https://main.test',secret:()=> 'test',getOutbox:async()=>createD1Outbox(database),fetchImpl:async(_url,init)=>{if(online) delivered.push(JSON.parse(init.body)); return Response.json({},{status:online?200:503});}};
+  const options={tool:'chanpinsheji',getMainAppUrl:()=> 'https://main.test',secret:()=> 'test',getOutbox:async()=>createD1Outbox(database),fetchImpl:async(_url,init)=>{if(online) delivered.push(JSON.parse(init.body)); return Response.json({success:true},{status:online?200:503});}};
   const first=createUsageReporter(options);
   const call=await first.begin({url:'https://api.openlux.ai/v1/images/generations',model:'img',userId:'employee'});
   await call.finish('completed');
