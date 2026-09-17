@@ -17,6 +17,8 @@ export function QuickDesignStudio() {
   const ctx = useDesignBrief();
   const { brief, studio, hydrated } = ctx;
   const [busy, setBusy] = useState(''), [notice, setNotice] = useState(''), [kind, setKind] = useState<AssetKind>('packaging'), [settingsOpen, setSettingsOpen] = useState(false);
+  const [documentDragging, setDocumentDragging] = useState(false);
+  const documentDragDepth = useRef(0);
   const projectRef = useRef(brief.projectId), mounted = useRef(true);
   projectRef.current = brief.projectId;
   useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
@@ -26,7 +28,11 @@ export function QuickDesignStudio() {
   const activeAsset = assets[kind], ready = !!logo && !!product && !!packaging;
   const active = (id: string) => mounted.current && projectRef.current === id;
   async function upload(file: File, type: 'reference' | 'document') {
-    if (busy) return;
+    if (busy || studio.pending) return;
+    if (type === 'document') {
+      if (!/\.(pdf|docx|txt|png|jpe?g|webp)$/i.test(file.name)) { setNotice('请选择 PDF、Word（.docx）、TXT 或 PNG / JPG / WebP 图片。'); return; }
+      if (file.size > 15 * 1024 * 1024) { setNotice('产品文档不能超过 15MB，请缩小文件后重新上传。'); return; }
+    }
     const id = brief.projectId; setBusy(type === 'reference' ? '正在读取参考图…' : '正在提取产品文档…'); setNotice('');
     try {
       if (type === 'reference') { const dataUrl = await prepareUpload(file); if (active(id)) patch({ reference: { name: file.name, dataUrl, mode: studio.reference ? studio.reference.mode || 'structure' : 'style' }, draft: {}, stage: 'idle', pending: undefined, error: undefined }); }
@@ -71,7 +77,39 @@ export function QuickDesignStudio() {
   return <div className="quick-studio">
     <header className="studio-heading"><div><div className="studio-eyebrow">PACKPILOT / DESIGN STUDIO</div><h1>{ready ? '让好设计，再进一步。' : '一份产品资料，开始整套原创设计。'}</h1><p>{ready ? '点选想修改的地方，告诉 AI 你的想法。每一步都可以回看。' : '上传产品文档，AI 从零设计瓶型、瓶盖、Logo、文案与外包装。无需准备瓶身图片。'}</p></div>{ready && <Link className="studio-primary" href="/workflow/6">质检与交付 ↗</Link>}</header>
     {(!ready || settingsOpen) && <section className="studio-setup">
-      <label className="studio-upload"><input type="file" aria-label="上传产品文档" accept=".pdf,.docx,.txt,.png,.jpg,.jpeg,.webp" disabled={!!busy || !!studio.pending} onChange={e => { const file = e.target.files?.[0]; if (file) void upload(file, 'document'); e.target.value = ''; }} /><span className="upload-symbol">▤</span><strong>{studio.documentName || '上传产品文档'}</strong><span>自动提取品牌、卖点与产品信息，直接开始设计</span><small>PDF / Word / TXT / 图片 · 最大 15MB</small></label>
+      <label className={`studio-upload${documentDragging ? ' is-dragging' : ''}`}
+        onDragEnter={e => {
+          if (!e.dataTransfer.types.includes('Files')) return;
+          e.preventDefault();
+          documentDragDepth.current += 1;
+          if (!busy && !studio.pending) setDocumentDragging(true);
+        }}
+        onDragOver={e => {
+          if (!e.dataTransfer.types.includes('Files')) return;
+          e.preventDefault();
+          e.dataTransfer.dropEffect = busy || studio.pending ? 'none' : 'copy';
+        }}
+        onDragLeave={e => {
+          e.preventDefault();
+          documentDragDepth.current = Math.max(0, documentDragDepth.current - 1);
+          if (!documentDragDepth.current) setDocumentDragging(false);
+        }}
+        onDrop={e => {
+          e.preventDefault();
+          documentDragDepth.current = 0;
+          setDocumentDragging(false);
+          if (busy || studio.pending) return;
+          const files = e.dataTransfer.files;
+          if (!files.length) return;
+          if (files.length !== 1) { setNotice('每次请上传一份产品文档，多份资料可合并后上传。'); return; }
+          void upload(files[0], 'document');
+        }}>
+        <input type="file" aria-label="上传产品文档" accept=".pdf,.docx,.txt,.png,.jpg,.jpeg,.webp" disabled={!!busy || !!studio.pending} onChange={e => { const file = e.target.files?.[0]; if (file) void upload(file, 'document'); e.target.value = ''; }} />
+        <span className="upload-symbol">▤</span>
+        <strong>{documentDragging ? '松开即可上传文档' : studio.documentName || '拖拽产品文档到这里，或点击上传'}</strong>
+        <span>{studio.documentName ? '拖拽或点击可替换文档，自动重新提取产品信息' : '自动提取品牌、卖点与产品信息，直接开始设计'}</span>
+        <small>PDF / Word（.docx）/ TXT / 图片 · 最大 15MB</small>
+      </label>
       {(studio.documentName || brief.brand.name || brief.product.name) && <div className="studio-facts"><label>品牌名<input disabled={!!busy || !!studio.pending} value={brief.brand.name} onChange={e => { ctx.setBrief({ ...brief, brand: { ...brief.brand, name: e.target.value } }); patch({ draft: {}, stage: "idle" }); }} /></label><label>产品名<input disabled={!!busy || !!studio.pending} value={brief.product.name} onChange={e => { ctx.setBrief({ ...brief, product: { ...brief.product, name: e.target.value } }); patch({ draft: {}, stage: "idle" }); }} /></label><div><small>已提取的产品信息</small><p>{[brief.product.category, ...brief.product.coreSellingPoints.map(p => p.point)].filter(Boolean).join(' · ') || '文档未提供更多产品事实'} <Link href="/workflow/1">查看与修改全部资料 ↗</Link></p></div></div>}
       <details className="studio-reference" open={!!studio.reference}>
         <summary>添加参考图 <small>可选 · 有喜欢的风格或现成瓶型时使用</small></summary>
