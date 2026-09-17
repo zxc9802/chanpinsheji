@@ -16,7 +16,7 @@ export async function POST(request: Request) {
     const job = jobs.enqueue(userId, async () => {
       const started = Date.now();
       const result = body.action === 'detect'
-        ? { regions: await recognizeRegions(image, aiServerConfig.yunwu, userId) }
+        ? { regions: await recognizeRegions(image, aiServerConfig.regionVision, userId) }
         : { maskUrl: await segmentRegion({ image, region: body.region, width: body.width, height: body.height, apiKey: aiServerConfig.fal.apiKey, userId }) };
       return { data: [JSON.stringify(result)], usage: { provider: body.action === 'detect' ? 'gemini' : 'fal', durationMs: Date.now() - started, images: 0 } };
     });

@@ -12,6 +12,11 @@ export const aiServerConfig = {
     baseUrl: process.env.OPENLUX_BASE_URL || "https://api.openlux.ai/v1",
     model: process.env.OPENLUX_MODEL || "gpt-5.6-luna",
   },
+  regionVision: {
+    apiKey: process.env.REGION_VISION_API_KEY || process.env.OPENLUX_API_KEY || "",
+    baseUrl: process.env.REGION_VISION_BASE_URL || "https://api.openlux.ai",
+    model: process.env.REGION_VISION_MODEL || "gemini-3.7-flash",
+  },
   deepseek: {
     apiKey: process.env.DEEPSEEK_API_KEY || "",
     baseUrl: process.env.DEEPSEEK_BASE_URL || "https://api.deepseek.com",

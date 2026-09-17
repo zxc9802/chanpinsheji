@@ -128,7 +128,11 @@ through the mode switch and shares the same project assets.
   completion can expire them. The UI requires an explicit retry after expiry;
   it does not silently submit another paid request.
 - New results automatically recognize editable regions once; users can rerun
-  recognition when needed. OCR/object regions use the existing `YUNWU_API_KEY` vision configuration.
+  recognition when needed. OCR/object regions use OpenLux `gemini-3.7-flash`,
+  configured with `REGION_VISION_API_KEY` (falls back to `OPENLUX_API_KEY`),
+  `REGION_VISION_BASE_URL=https://api.openlux.ai` (host only, without `/v1beta`),
+  and `REGION_VISION_MODEL=gemini-3.7-flash`. This configuration is independent
+  of document parsing (`OPENLUX_*`) and other vision tasks (`YUNWU_*`).
   The selected object can be refined with `fal-ai/sam-3/image`, using `FAL_KEY`.
   These are billed calls. Missing vision configuration leaves manual selection
   available. Text polygons and object boundaries can be corrected manually.
