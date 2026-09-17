@@ -12,6 +12,7 @@ import "./product-copy-layout.css";
 import "./product-diversity.css";
 import "./packaging.css";
 import "./delivery.css";
+import "./studio.css";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",

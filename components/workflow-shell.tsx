@@ -24,7 +24,7 @@ const stepValues = [
   "完成规范检查并整理交付文件。",
 ];
 
-export function WorkflowShell({ currentStep, children }: { currentStep: number; children: React.ReactNode }) {
+export function WorkflowShell({ currentStep, children, mode = "professional" }: { currentStep: number; children: React.ReactNode; mode?: "studio" | "professional" }) {
   const pathname = usePathname();
   const router = useRouter();
   const { brief, completedSteps, hydrated, storageError, brandAssets, delivery, projects, activeProjectId, createProject, switchProject } = useDesignBrief();
@@ -38,26 +38,26 @@ export function WorkflowShell({ currentStep, children }: { currentStep: number; 
   const startProject = async () => {
     if (projectBusy || !window.confirm("新建项目会保留当前项目，并将它加入历史项目。确认新建吗？")) return;
     setProjectBusy(true);
-    try { await createProject(); setHistoryOpen(false); router.push("/workflow/1"); }
+    try { await createProject(); setHistoryOpen(false); router.push(mode === "studio" ? "/studio" : "/workflow/1"); }
     catch (error) { window.alert(`新建项目失败：${error instanceof Error ? error.message : "浏览器存储不可用"}`); }
     finally { setProjectBusy(false); }
   };
   const continueProject = async (projectId: string) => {
     if (projectBusy || projectId === activeProjectId) { setHistoryOpen(false); return; }
     setProjectBusy(true);
-    try { await switchProject(projectId); setHistoryOpen(false); router.push("/workflow/1"); }
+    try { await switchProject(projectId); setHistoryOpen(false); router.push(mode === "studio" ? "/studio" : "/workflow/1"); }
     catch (error) { window.alert(`打开历史项目失败：${error instanceof Error ? error.message : "项目数据不可用"}`); }
     finally { setProjectBusy(false); }
   };
 
   return (
-    <div className="app-shell">
+    <div className={`app-shell ${mode === "studio" ? "studio-shell" : ""}`}>
       <aside className="sidebar">
         <div className="logo"><BoxIcon /><span>PackPilot</span></div>
         <div className="workspace-label">工作空间</div>
         <nav className="side-nav" aria-label="主导航">
           {sideItems.map(({ icon, label }, index) => {
-            if (index === 0) return <Link className="side-link active" href={`/workflow/${currentStep}`} key={label}><span aria-hidden="true">{icon}</span>{label}{delivery.projectCompleted&&<em>已完成</em>}</Link>;
+            if (index === 0) return <Link className="side-link active" href={mode === "studio" ? "/studio" : `/workflow/${currentStep}`} key={label}><span aria-hidden="true">{icon}</span>{label}{delivery.projectCompleted&&<em>已完成</em>}</Link>;
             if (index === 1 && brandAssets.length > 0) return <Link className="side-link" href="/brand-assets" key={label}><span aria-hidden="true">{icon}</span>{label}<em>{brandAssets.length}</em></Link>;
             if (index === 2) return <Link className="side-link" href="/templates" key={label}><span aria-hidden="true">{icon}</span>{label}{delivery.templates.length>0&&<em>{delivery.templates.length}</em>}</Link>;
             if (index === 3) return <Link className="side-link" href="/exports" key={label}><span aria-hidden="true">{icon}</span>{label}{delivery.exportRecords.length>0&&<em>{delivery.exportRecords.length}</em>}</Link>;
@@ -72,6 +72,7 @@ export function WorkflowShell({ currentStep, children }: { currentStep: number; 
         {aiNotice&&<div className={`global-ai-notice ${aiNotice.tone}`}>{aiNotice.message}<button onClick={()=>setAiNotice(null)}>×</button></div>}
         <header className="topbar">
           <div><span className="crumb">项目</span><span className="slash">/</span><strong>{brief.product.name || "未命名包装项目"}</strong></div>
+          <nav className="design-mode-switch" aria-label="设计模式"><Link href="/studio" className={mode === "studio" ? "active" : ""}>一键生成</Link><Link href={`/workflow/${currentStep}`} className={mode === "professional" ? "active" : ""}>专业分步设计</Link></nav>
         </header>
 
         <div className="stepper-wrap">
@@ -92,7 +93,7 @@ export function WorkflowShell({ currentStep, children }: { currentStep: number; 
         </div>
 
         <div className="content-layout">
-          <section className="content-column" key={pathname}>{children}</section>
+          <section className="content-column" key={`${pathname}:${activeProjectId}`}>{children}</section>
           <aside className="right-panel">
             <div className="project-side-actions">
               <div className="project-side-head"><span>◫</span><div><strong>项目工作台</strong><small>独立保存 · 随时继续</small></div></div>

@@ -15,6 +15,7 @@ export async function fetchFalImage(args: {
   prompt: string;
   referenceImages?: string[];
   size?: string;
+  maskImage?: string;
   billingUserId?: string;
   timeoutMs?: number;
   pollIntervalMs?: number;
@@ -23,6 +24,7 @@ export async function fetchFalImage(args: {
   const started = Date.now();
   const deadline = started + (args.timeoutMs ?? 360_000);
   const references = args.referenceImages || [];
+  if (args.maskImage && !references.length) throw new Error("局部编辑缺少原图");
   const model = `openai/gpt-image-2.5/sunburst/${references.length ? "edit" : "text-to-image"}`;
   const billing = await reserveMainAppCredits({
     userId: args.billingUserId,
@@ -67,6 +69,7 @@ export async function fetchFalImage(args: {
         output_format: "png",
         image_size: dimensions ? { width: Number(dimensions[1]), height: Number(dimensions[2]) } : args.size === "2K" ? { width: 2048, height: 2048 } : "auto",
         ...(references.length ? { image_urls: references } : {}),
+        ...(args.maskImage ? { mask_url: args.maskImage } : {}),
       }),
     });
     requestId = queued.request_id || "";
