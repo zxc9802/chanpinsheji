@@ -45,14 +45,62 @@ function fixture() {
   const copy={id:'copy-ai-test',directionName:'test',toneTags:[],fields:[{key:'main_slogan',label:'主标语',content:'自然相伴'}],sourceInsightIds:[],round:1};
   return {brief,state,copy};
 }
-test('one click checkpoints each asset and uses fixed logo and selected copy for both images', async () => {
+test('legacy references keep their structure and all assets are checkpointed', async () => {
   const {brief,state,copy}=fixture(), images=[], checkpoints=[];
   const result=await generateQuickDesign(brief,state,{copy:async()=>copy,image:async(stage,prompt,refs,pending)=>{images.push({stage,prompt,refs,pending});return `data:image/png;base64,${stage}`;},checkpoint:p=>checkpoints.push(p),active:()=>true});
   assert.deepEqual(images.map(i=>i.stage),['logo','product','packaging']);
   assert.equal(images[1].refs[0],state.reference.dataUrl);assert.equal(images[1].refs[1],result.logo.imageUrl);
   assert.equal(images[2].refs[0],result.product.imageUrl);assert.equal(images[2].refs[1],result.logo.imageUrl);
   assert.match(images[1].prompt,/自然相伴/);assert.match(images[2].prompt,/自然相伴/);
+  assert.match(images[1].prompt,/必须保持结构/);assert.equal(result.container.source,'upload');
   assert.equal(checkpoints.at(-1).stage,'completed');assert.ok(checkpoints.at(-1).draft.packaging);
+});
+test('document-only input creates an original structure with no user-supplied image', async () => {
+  const {brief,state,copy}=fixture(), images=[];delete state.reference;
+  brief.hardConstraints={dimensions:'30mL，瓶高不超过 110mm',maxPackageCost:'8元'};
+  const result=await generateQuickDesign(brief,state,{copy:async()=>copy,image:async(stage,prompt,refs)=>{images.push({stage,prompt,refs});return `generated-${stage}`;},checkpoint:()=>{},active:()=>true});
+  assert.deepEqual(images.map(i=>i.refs),[[],['generated-logo'],['generated-product','generated-logo']]);
+  assert.match(images[1].prompt,/从零原创.*瓶身形状.*瓶盖或泵头/);
+  assert.match(images[1].prompt,/唯一参考图.*品牌 Logo/);
+  assert.doesNotMatch(images[1].prompt,/必须保持结构/);
+  assert.match(images[1].prompt,/30mL.*110mm/);assert.match(images[1].prompt,/8元/);
+  assert.equal(result.container.source,'ai');assert.equal(result.container.referenceImageUrl,undefined);
+  assert.equal(result.container.sketchUrl,result.product.imageUrl);
+  assert.equal(result.product.containerType.sketchUrl,result.product.imageUrl);
+  assert.equal(result.container.volumeOptions[0],brief.hardConstraints.dimensions);
+});
+test('optional style image informs logo and color without locking bottle structure', async () => {
+  const {brief,state,copy}=fixture(), images=[];state.reference.mode='style';
+  const result=await generateQuickDesign(brief,state,{copy:async()=>copy,image:async(stage,prompt,refs)=>{images.push({stage,prompt,refs});return `generated-${stage}`;},checkpoint:()=>{},active:()=>true});
+  assert.deepEqual(images[0].refs,[state.reference.dataUrl]);
+  assert.deepEqual(images[1].refs,[state.reference.dataUrl,'generated-logo']);
+  assert.match(images[1].prompt,/不锁定其瓶型/);assert.match(images[1].prompt,/从零原创/);
+  assert.doesNotMatch(images[1].prompt,/必须保持结构/);
+  assert.equal(result.container.source,'ai');assert.equal(result.container.referenceImageUrl,undefined);
+  assert.equal(result.container.sketchUrl,'generated-product');
+});
+test('explicit preservation constrains structure without using the bottle as a logo style reference', async () => {
+  const {brief,state,copy}=fixture(), images=[];state.reference.mode='structure';
+  const result=await generateQuickDesign(brief,state,{copy:async()=>copy,image:async(stage,prompt,refs)=>{images.push({stage,prompt,refs});return `generated-${stage}`;},checkpoint:()=>{},active:()=>true});
+  assert.deepEqual(images[0].refs,[]);assert.deepEqual(images[1].refs,[state.reference.dataUrl,'generated-logo']);
+  assert.match(images[1].prompt,/必须保持结构、器型比例、瓶盖和开口方式/);
+  assert.equal(result.container.source,'upload');assert.equal(result.container.sketchUrl,state.reference.dataUrl);
+});
+test('document-only resume keeps its paid job and sync can preserve an adopted original bottle', async () => {
+  const {brief,state,copy}=fixture();delete state.reference;
+  let saved;
+  await assert.rejects(generateQuickDesign(brief,state,{copy:async()=>copy,image:async(stage)=>{if(stage==='product')throw Error('waiting');return 'logo';},checkpoint:p=>{saved={...state,...p};},active:()=>true}),/waiting/);
+  const calls=[];
+  const result=await generateQuickDesign(brief,{...saved,pending:{stage:'product',jobId:'saved-original-job'}},{copy:async()=>{throw Error('duplicate copy');},image:async(stage,prompt,refs,pending)=>{calls.push({stage,refs,pending});return stage;},checkpoint:()=>{},active:()=>true});
+  assert.deepEqual(calls,[{stage:'product',refs:['logo'],pending:'saved-original-job'},{stage:'packaging',refs:['product','logo'],pending:undefined}]);
+  const syncCalls=[];
+  const synced=await generateQuickDesign(brief,{...state,draft:{logo:result.logo,copy,container:{...result.container,referenceImageUrl:'adopted-bottle'}}},{copy:async()=>{throw Error('duplicate copy');},image:async(stage,prompt,refs)=>{syncCalls.push({stage,prompt,refs});return `synced-${stage}`;},checkpoint:()=>{},active:()=>true});
+  assert.deepEqual(syncCalls[0].refs,['adopted-bottle','logo']);assert.match(syncCalls[0].prompt,/必须保持结构/);
+  assert.deepEqual(syncCalls[1].refs,['synced-product','logo']);assert.equal(synced.container.source,'ai');
+});
+test('missing product identity still blocks generation before any AI calls', async () => {
+  const {brief,state}=fixture();delete state.reference;brief.product.name=' ';
+  await assert.rejects(generateQuickDesign(brief,state,{copy:async()=>{throw Error('unexpected call');},image:async()=>{throw Error('unexpected call');},checkpoint:()=>{},active:()=>true}),/请补充品牌名和产品名/);
 });
 test('resume uses saved job ID and never regenerates finished logo or copy', async () => {
   const {brief,state,copy}=fixture();state.draft={copy,logo:{id:'logo-ai-old',imageUrl:'saved-logo',styleTags:[],matchedSellingPoints:[],logoType:'wordmark',round:1}};state.pending={stage:'product',jobId:'existing-paid-job'};

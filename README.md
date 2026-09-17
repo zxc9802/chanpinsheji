@@ -114,9 +114,12 @@ actions tied to the current ChatGPT user. Leave public content anonymous.
 
 ## One-click design studio
 
-The default `/studio` route accepts a bottle/product reference and a product
-brief (DOCX, text PDF, TXT, or image). It builds copy, Logo, product and packaging
-in sequence using fal `high`. The original six-step workflow stays available
+The default `/studio` route starts from a product brief (DOCX, text PDF, TXT,
+or image), with no bottle reference required. It designs an original bottle
+shape, closure and visual treatment along with copy, Logo and outer packaging,
+in sequence using fal `high`. An optional image can inform visual style or
+explicitly preserve an existing bottle structure. New uploads default to style
+reference; legacy references retain structure preservation. The original six-step workflow stays available
 through the mode switch and shares the same project assets.
 
 - Browser IndexedDB saves partial progress, task IDs, detected polygons and

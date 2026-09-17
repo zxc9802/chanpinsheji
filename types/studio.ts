@@ -31,7 +31,8 @@ export type StudioVersion = {
   createdAt: string;
 };
 export type StudioState = {
-  reference?: { name: string; dataUrl: string };
+  // References saved before modes existed were always used to preserve structure.
+  reference?: { name: string; dataUrl: string; mode?: "style" | "structure" };
   documentName?: string;
   styleHint: string;
   draft: Partial<QuickBundle>;

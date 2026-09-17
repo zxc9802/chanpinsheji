@@ -17,28 +17,36 @@ export type QuickDesignDependencies = {
   active: () => boolean;
 };
 export async function generateQuickDesign(brief: DesignBrief, state: StudioState, deps: QuickDesignDependencies): Promise<QuickBundle> {
-  if (!state.reference || !brief.brand.name.trim() || !brief.product.name.trim()) throw new Error('请补充瓶身参考图、品牌名和产品名');
+  if (!brief.brand.name.trim() || !brief.product.name.trim()) throw new Error('请补充品牌名和产品名');
   const draft = { ...state.draft };
+  const structureReference = draft.container?.referenceImageUrl || (state.reference?.mode !== 'style' ? state.reference?.dataUrl : undefined);
+  const styleReference = state.reference?.mode === 'style' ? state.reference.dataUrl : undefined;
   const checkpoint = (stage: string) => { if (!deps.active()) throw new Error('已离开当前项目，已完成结果保留'); deps.checkpoint({ draft: { ...draft }, stage, error: undefined }); };
-  const facts = `品牌：${brief.brand.name}。产品：${brief.product.name}。资料：${JSON.stringify(brief)}。设计方向：${state.styleHint || brief.styleKeywords.join('、') || '根据产品定位自主设计'}。严禁编造规格、功效、认证、配方、联系方式、二维码或条码。品牌名、产品名必须准确。`;
+  const facts = `品牌：${brief.brand.name}。产品：${brief.product.name}。资料：${JSON.stringify(brief)}。设计方向：${state.styleHint || brief.styleKeywords.join('、') || '根据产品定位自主设计'}。遵守文档中提供的容量、尺寸和成本约束；未提供的结构尺寸、材质和工艺可作设计建议，不能作为已确认规格印在包装上。严禁编造净含量、功效、认证、配方、联系方式、二维码或条码。品牌名、产品名必须准确。`;
   const image = async (stage: AssetKind, prompt: string, refs: string[]) => {
     checkpoint(stage);
     return deps.image(stage, prompt, refs, state.pending?.stage === stage ? state.pending.jobId : undefined);
   };
   if (!draft.container) draft.container = {
-    id: `uploaded-studio-${Date.now()}`, name: '上传的产品器型', sketchUrl: state.reference.dataUrl, referenceImageUrl: state.reference.dataUrl,
-    suitableCategories: [brief.product.category], dispensingType: '保持参考图结构', volumeOptions: [brief.hardConstraints.dimensions || '按实物规格'], costLevel: 2,
-    materialOptions: [], viewMode: 'two_view', source: 'upload', kind: 'custom', isCustom: true, engineeringVerificationRequired: true,
+    id: `${structureReference ? 'uploaded' : 'ai'}-studio-${Date.now()}`, name: structureReference ? '参考图产品器型' : 'AI 原创产品器型', sketchUrl: structureReference || '', referenceImageUrl: structureReference,
+    suitableCategories: [brief.product.category], dispensingType: structureReference ? '保持参考图结构' : '根据产品取用场景设计', volumeOptions: [brief.hardConstraints.dimensions || '规格待确认'], costLevel: 2,
+    materialOptions: [], viewMode: 'two_view', source: structureReference ? 'upload' : 'ai', kind: 'custom', isCustom: true, engineeringVerificationRequired: true,
   };
   if (!draft.copy) { checkpoint('copy'); draft.copy = await deps.copy(brief, `${state.styleHint}。仅使用提供资料中的事实，缺失的功效、规格、配方不补造。`); checkpoint('copy'); }
   if (!draft.logo) {
-    const url = await image('logo', `设计单一完整的品牌 Logo，品牌字标为“${brief.brand.name}”，可以搭配一个简洁图形，居中平面白底，无样机，无多方案拼接。${facts}`, []);
+    const url = await image('logo', `设计单一完整的品牌 Logo，品牌字标为“${brief.brand.name}”，可以搭配一个简洁图形，居中平面白底，无样机，无多方案拼接。${styleReference ? '参考图仅提供配色、材质氛围和视觉风格，不得照搬参考图中的商标或文字。' : ''}${facts}`, styleReference ? [styleReference] : []);
     draft.logo = { id: `logo-ai-studio-${Date.now()}`, imageUrl: url, logoType: 'combination', styleTags: brief.styleKeywords, matchedSellingPoints: [], round: 1 }; checkpoint('logo');
   }
   const copyText = draft.copy.fields.map(f => `${f.label}：${f.content}`).join('\n');
   if (!draft.product) {
-    const prompt = `设计产品瓶身及标签。第一张参考图是必须保持结构、器型比例和开口方式的产品，第二张是必须准确使用的品牌Logo。输出一张精致的产品展示图，包含清晰正面主视图和较小背面视图，完整展示产品，温暖白底。按实际版面合理安排以下文案，品牌和产品名清晰完整：\n${copyText}\n${facts}`;
-    const url = await image('product', prompt, [state.reference.dataUrl, draft.logo.imageUrl]);
+    const designDirection = structureReference
+      ? '第一张参考图是必须保持结构、器型比例、瓶盖和开口方式的产品，重新设计其视觉。第二张是必须准确使用的品牌 Logo。'
+      : `从零原创设计完整产品的瓶身形状、比例、瓶肩、瓶盖或泵头、开口与取用方式、材质、表面工艺和标签。根据产品品类、容量、定位与使用场景自主决定合理结构。${styleReference ? '第一张图仅作配色、材质氛围和视觉风格参考，不锁定其瓶型、轮廓或开口，不得照搬其中的商标或文字。第二张是必须准确使用的品牌 Logo。' : '唯一参考图是必须准确使用的品牌 Logo，仅供品牌标识使用，不是瓶身结构参考。'}`;
+    const prompt = `设计产品瓶身及标签。${designDirection}输出一张精致的产品展示图，包含清晰正面主视图和较小背面视图，完整展示产品，温暖白底。按实际版面合理安排以下文案，品牌和产品名清晰完整：\n${copyText}\n${facts}`;
+    const reference = structureReference || styleReference;
+    const url = await image('product', prompt, [...(reference ? [reference] : []), draft.logo.imageUrl]);
+    // Use the original design as its structure preview in the professional workflow.
+    if (!structureReference) draft.container = { ...draft.container, sketchUrl: url };
     draft.product = { id: `product-ai-studio-${Date.now()}`, imageUrl: url, styleDirection: state.styleHint || '品牌统一设计', containerType: { ...draft.container, volume: draft.container.volumeOptions[0] }, cmf: { colorScheme: [], material: '见设计图，生产前确认', finish: '见设计图，生产前确认' }, matchedSellingPoints: brief.product.coreSellingPoints.map(p => p.point), avoidedPainPoints: [], viewMode: 'two_view', copyApplied: draft.copy.fields, round: 1, renderMode: 'direct_ai', generationStatus: 'completed', generationPrompt: prompt, createdAt: new Date().toISOString() }; checkpoint('product');
   }
   if (!draft.packaging) {
