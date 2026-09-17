@@ -1,6 +1,16 @@
 import test from 'node:test';import assert from 'node:assert/strict';import{recognizeRegions,segmentRegion}from'../lib/region-recognition.ts';
 const img='data:image/png;base64,AAAA',userId='synthetic-region-user';
 const region={kind:'packaging',label:'盒子',polygon:[[100,200],[500,200],[500,900],[100,900]],confidence:.9};
+test('OpenLux recognition ignores thinking parts and parses the final fenced JSON', async t => {
+  const { calls } = setup(t, () => Response.json({ candidates: [{ content: { parts: [
+    { thought: true, text: 'I will identify the editable packaging regions.' },
+    { text: '```json\n' + JSON.stringify({ regions: [region] }) + '\n```' },
+  ] } }] }));
+  const regions = await recognizeRegions(img, { apiKey: 'synthetic-openlux', baseUrl: 'https://api.openlux.ai/', model: 'gemini-3.7-flash' }, userId);
+  assert.equal(regions[0].label, '盒子');
+  assert.equal(calls[0].url, 'https://api.openlux.ai/v1beta/models/gemini-3.7-flash:generateContent');
+  assert.equal(calls[0].init.headers['x-goog-api-key'], 'synthetic-openlux');
+});
 function setup(t,respond){const old={url:process.env.MAIN_APP_URL,secret:process.env.MAIN_APP_SSO_CLIENT_SECRET};process.env.MAIN_APP_URL='https://billing.test';process.env.MAIN_APP_SSO_CLIENT_SECRET='synthetic';t.after(()=>{for(const[k,v]of Object.entries({MAIN_APP_URL:old.url,MAIN_APP_SSO_CLIENT_SECRET:old.secret}))if(v===undefined)delete process.env[k];else process.env[k]=v;});const billing=[],calls=[];t.mock.method(globalThis,'fetch',async(url,init)=>{if(String(url).startsWith('https://billing.test')){billing.push(JSON.parse(init.body));return Response.json({ok:true});}calls.push({url:String(url),init});return respond(String(url),init)});return{billing,calls};}
 test('SAM uses pixel bounds, returns binary mask and settles once',async t=>{const{billing,calls}=setup(t,(url,init)=>Response.json(init.method==='POST'?{request_id:'r1',status_url:'https://queue.fal.run/sam/r1/status',response_url:'https://queue.fal.run/sam/r1'}:url.endsWith('/status')?{status:'COMPLETED'}:{masks:[{url:'https://fal.media/mask.png'}]}));assert.equal(await segmentRegion({image:img,region,width:768,height:1024,apiKey:'synthetic-fal',userId}),'https://fal.media/mask.png');const b=JSON.parse(calls[0].init.body);assert.deepEqual(b.box_prompts,[{x_min:76,y_min:204,x_max:384,y_max:922}]);assert.equal(b.apply_mask,false);assert.deepEqual(billing.map(x=>x.action),['reserve','settle']);});
 test('SAM rejects untrusted queue URL without forwarding API key and releases credits',async t=>{const{billing,calls}=setup(t,()=>Response.json({request_id:'r1',status_url:'https://attacker.test/status',response_url:'https://queue.fal.run/sam/r1'}));await assert.rejects(segmentRegion({image:img,region,width:768,height:1024,apiKey:'synthetic-fal',userId}),/无效/);assert.equal(calls.length,1);assert.deepEqual(billing.map(x=>x.action),['reserve','release']);});
