@@ -1,8 +1,12 @@
 export type CopyProviderName = "deepseek" | "gemini";
-export type ImageProviderName = "doubao" | "yunwu";
+export type ImageProviderName = "fal" | "doubao" | "yunwu";
 export type DocumentProviderName = "openlux";
 
 export const aiServerConfig = {
+  fal: {
+    apiKey: process.env.FAL_KEY || process.env.FAL_GPT_IMAGE2_API_KEY || "",
+    imageModel: "gpt-image-2.5-sunburst",
+  },
   openlux: {
     apiKey: process.env.OPENLUX_API_KEY || "",
     baseUrl: process.env.OPENLUX_BASE_URL || "https://api.openlux.ai/v1",
@@ -28,6 +32,6 @@ export const aiServerConfig = {
   },
   defaults: {
     copy: (["deepseek","gemini"].includes(process.env.AI_PROVIDER_COPY || "") ? process.env.AI_PROVIDER_COPY : "deepseek") as CopyProviderName,
-    image: (["doubao","yunwu"].includes(process.env.AI_PROVIDER_IMAGE || "") ? process.env.AI_PROVIDER_IMAGE : "yunwu") as ImageProviderName,
+    image: (["fal","doubao","yunwu"].includes(process.env.AI_PROVIDER_IMAGE || "") ? process.env.AI_PROVIDER_IMAGE : "fal") as ImageProviderName,
   },
 };

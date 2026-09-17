@@ -24,11 +24,11 @@ export const recordAiUsage = (record: Omit<AiUsageRecord, "id" | "createdAt">) =
   window.dispatchEvent(new CustomEvent("ai-usage-updated"));
 };
 export const getUsageCount = (generator: AiUsageRecord["generator"]) => getAiUsage().filter((item) => item.generator === generator).length;
-export const getProviderOverrides = (): { copy?: "deepseek" | "gemini"; image?: "doubao" | "yunwu" } => {
+export const getProviderOverrides = (): { copy?: "deepseek" | "gemini"; image?: "fal" | "doubao" | "yunwu" } => {
   if (typeof window === "undefined") return {};
   try {
     const parsed=JSON.parse(localStorage.getItem(OVERRIDE_KEY)||"{}") as {copy?:string;image?:string};
-    return {...(["deepseek","gemini"].includes(parsed.copy||"")?{copy:parsed.copy as "deepseek"|"gemini"}:{}),...(["doubao","yunwu"].includes(parsed.image||"")?{image:parsed.image as "doubao"|"yunwu"}:{})};
+    return {...(["deepseek","gemini"].includes(parsed.copy||"")?{copy:parsed.copy as "deepseek"|"gemini"}:{}),...(["fal","doubao","yunwu"].includes(parsed.image||"")?{image:parsed.image as "fal"|"doubao"|"yunwu"}:{})};
   } catch { return {}; }
 };
 export const setProviderOverride = (type: "copy" | "image", value: string) => {

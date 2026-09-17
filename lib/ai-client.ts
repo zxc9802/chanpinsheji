@@ -52,7 +52,7 @@ async function pollImageJob<T>(jobId: string,onProgress?: (data:T) => void): Pro
   throw new Error("图像任务等待超时，请稍后重试");
 }
 
-let defaults: { copy: "deepseek" | "gemini"; image: "doubao" | "yunwu" } | undefined;
+let defaults: { copy: "deepseek" | "gemini"; image: "fal" | "doubao" | "yunwu" } | undefined;
 export async function getAiProvider(type: "copy" | "image") {
   const override = getProviderOverrides()[type];
   if (override) return override;
