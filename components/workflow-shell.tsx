@@ -36,7 +36,7 @@ export function WorkflowShell({ currentStep, children, mode = "professional" }: 
   useEffect(()=>{const listener=(event:Event)=>{const detail=(event as CustomEvent<{message:string;tone:string}>).detail;setAiNotice(detail);window.setTimeout(()=>setAiNotice(null),5000)};window.addEventListener("ai-provider-notice",listener);return()=>window.removeEventListener("ai-provider-notice",listener)},[]);
   const canVisit = (step: number) => step === 1 || step === currentStep || completedSteps.includes(step) || completedSteps.includes(step - 1);
   const startProject = async () => {
-    if (projectBusy || !window.confirm("新建项目会保留当前项目，并将它加入历史项目。确认新建吗？")) return;
+    if (projectBusy || !window.confirm("新创建需重新上传产品文档；当前项目及设计会保存在历史项目中。确认新建吗？")) return;
     setProjectBusy(true);
     try { await createProject(); setHistoryOpen(false); router.push(mode === "studio" ? "/studio" : "/workflow/1"); }
     catch (error) { window.alert(`新建项目失败：${error instanceof Error ? error.message : "浏览器存储不可用"}`); }

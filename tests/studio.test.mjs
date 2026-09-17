@@ -39,12 +39,39 @@ test('recognition rejects remote URLs and unsupported media before network acces
   assert.throws(()=>validateRegionImage('data:image/svg+xml;base64,AAAA'),/提供/);
   assert.equal(validateRegionImage('data:image/png;base64,AAAA'),'data:image/png;base64,AAAA');
 });
+test('reference-only edits identify the original image and retain the selection boundary', () => {
+  const prompt = buildRegionEditPrompt({ region: { kind: 'packaging', label: '盒子' }, brandName: '青野', productName: '精华', hasReference: true });
+  assert.match(prompt, /根据第二张参考图/);
+  assert.match(prompt, /蒙版只作用于第一张图/);
+  assert.match(prompt, /其他位置必须完全保持不变/);
+  assert.doesNotMatch(prompt, /三视图/);
+  const whole = buildRegionEditPrompt({ brandName: '青野', productName: '精华', assetKind: 'product', hasReference: true });
+  assert.match(whole, /#FFFFFF/);
+  assert.match(whole, /正面.*侧面.*背面三视图/);
+});
 function fixture() {
   const brief=emptyDesignBrief(); brief.brand.name='青野'; brief.product.name='精华'; brief.product.category='护肤';
   const state=emptyStudioState();state.reference={name:'bottle.png',dataUrl:'data:image/png;base64,AAAA'};
   const copy={id:'copy-ai-test',directionName:'test',toneTags:[],fields:[{key:'main_slogan',label:'主标语',content:'自然相伴'}],sourceInsightIds:[],round:1};
   return {brief,state,copy};
 }
+test('new bundle generation uses white backgrounds and consistent three-view product metadata', async () => {
+  const { brief, state, copy } = fixture(), images = [];
+  const result = await generateQuickDesign(brief, state, {
+    copy: async () => copy,
+    image: async (stage, prompt) => { images.push({ stage, prompt }); return `generated-${stage}`; },
+    checkpoint: () => {}, active: () => true,
+  });
+  for (const item of images) assert.match(item.prompt, /纯白色 #FFFFFF/);
+  for (const item of images.filter(i => i.stage !== 'logo')) {
+    assert.match(item.prompt, /三视图/);
+    assert.match(item.prompt, /完整正面、完整侧面、完整背面/);
+    assert.match(item.prompt, /同尺度、同基线/);
+  }
+  assert.equal(result.product.viewMode, 'three_view');
+  assert.equal(result.container.viewMode, 'three_view');
+  assert.equal(result.product.containerType.viewMode, 'three_view');
+});
 test('legacy references keep their structure and all assets are checkpointed', async () => {
   const {brief,state,copy}=fixture(), images=[], checkpoints=[];
   const result=await generateQuickDesign(brief,state,{copy:async()=>copy,image:async(stage,prompt,refs,pending)=>{images.push({stage,prompt,refs,pending});return `data:image/png;base64,${stage}`;},checkpoint:p=>checkpoints.push(p),active:()=>true});

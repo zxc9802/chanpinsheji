@@ -1,4 +1,4 @@
-import type { DesignRegion, Point } from "../types/studio.ts";
+import type { AssetKind, DesignRegion, Point } from "../types/studio.ts";
 
 const kinds = new Set(["text", "logo", "bottle", "packaging", "decoration"]);
 export function parseDesignRegions(raw: unknown): DesignRegion[] {
@@ -35,15 +35,17 @@ export function rectangleRegion(a: Point, b: Point): DesignRegion | undefined {
   if (right - x < 3 || bottom - y < 3) return;
   return { id: `manual-${Date.now()}`, kind: "decoration", label: "手动选区", polygon: [[x, y], [right, y], [right, bottom], [x, bottom]], confidence: 1, source: "manual" };
 }
-export function buildRegionEditPrompt(args: { region?: DesignRegion; instruction?: string; replacementText?: string; brandName: string; productName: string }) {
+export function buildRegionEditPrompt(args: { region?: DesignRegion; instruction?: string; replacementText?: string; brandName: string; productName: string; assetKind?: AssetKind; hasReference?: boolean }) {
   const { region } = args;
   const replacement = args.replacementText?.trim();
-  const direction = args.instruction?.trim() || (region?.kind === "text" ? "保留文字的事实和含义，提出一版更清晰简洁的排版与表达，不添加新功效或数值。" : "提供一个新的、有明显差异但符合当前品牌的设计方向。");
+  const direction = args.instruction?.trim() || (args.hasReference ? "根据第二张参考图的视觉特征调整当前选区或整体设计，保留当前产品与品牌身份。" : region?.kind === "text" ? "保留文字的事实和含义，提出一版更清晰简洁的排版与表达，不添加新功效或数值。" : "提供一个新的、有明显差异但符合当前品牌的设计方向。");
   return [
     region ? `仅编辑蒙版透明选区：${region.label}（${region.kind}）。图中其他位置必须完全保持不变。` : "调整整张设计图，保持产品身份和已经确认的器型。",
     replacement ? `选中文字必须准确替换为以下内容，不增删任何字：${JSON.stringify(replacement)}` : region?.text ? `当前文字：${JSON.stringify(region.text)}` : "",
     `品牌：${args.brandName}；产品：${args.productName}。除非本次明确替换，否则品牌名、规格、成分、功效事实必须保持原样。不能编造。`,
     direction,
+    args.hasReference ? "第二张图仅是用户上传的修改参考。第一张图才是待编辑原图，蒙版只作用于第一张图。吸收参考图中与修改要求相关的配色、图案、材质或造型，不复制无关文字、水印或背景，不把两张图拼贴。" : "",
+    !region ? `输出背景必须为纯白色 #FFFFFF，无场景、道具或渐变。${args.assetKind === 'product' || args.assetKind === 'packaging' ? '保持同一设计的完整正面、完整侧面、完整背面三视图，三者同尺度、同基线并排，不重叠、不裁切。' : ''}` : "",
     "第一张图是待编辑原图，保持透视、光照、材质和选区边缘衔接自然。不输出选框、蒙版、标注或说明。",
   ].filter(Boolean).join("\n");
 }

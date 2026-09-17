@@ -30,11 +30,11 @@ export async function generateQuickDesign(brief: DesignBrief, state: StudioState
   if (!draft.container) draft.container = {
     id: `${structureReference ? 'uploaded' : 'ai'}-studio-${Date.now()}`, name: structureReference ? '参考图产品器型' : 'AI 原创产品器型', sketchUrl: structureReference || '', referenceImageUrl: structureReference,
     suitableCategories: [brief.product.category], dispensingType: structureReference ? '保持参考图结构' : '根据产品取用场景设计', volumeOptions: [brief.hardConstraints.dimensions || '规格待确认'], costLevel: 2,
-    materialOptions: [], viewMode: 'two_view', source: structureReference ? 'upload' : 'ai', kind: 'custom', isCustom: true, engineeringVerificationRequired: true,
+    materialOptions: [], viewMode: 'three_view', source: structureReference ? 'upload' : 'ai', kind: 'custom', isCustom: true, engineeringVerificationRequired: true,
   };
   if (!draft.copy) { checkpoint('copy'); draft.copy = await deps.copy(brief, `${state.styleHint}。仅使用提供资料中的事实，缺失的功效、规格、配方不补造。`); checkpoint('copy'); }
   if (!draft.logo) {
-    const url = await image('logo', `设计单一完整的品牌 Logo，品牌字标为“${brief.brand.name}”，可以搭配一个简洁图形，居中平面白底，无样机，无多方案拼接。${styleReference ? '参考图仅提供配色、材质氛围和视觉风格，不得照搬参考图中的商标或文字。' : ''}${facts}`, styleReference ? [styleReference] : []);
+    const url = await image('logo', `设计单一完整的品牌 Logo，品牌字标为“${brief.brand.name}”，可以搭配一个简洁图形，居中平面白底，无样机，无多方案拼接。${styleReference ? '参考图仅提供配色、材质氛围和视觉风格，不得照搬参考图中的商标或文字。' : ''}${facts}输出背景必须为纯白色 #FFFFFF，不得使用场景、道具、渐变或有色背景。`, styleReference ? [styleReference] : []);
     draft.logo = { id: `logo-ai-studio-${Date.now()}`, imageUrl: url, logoType: 'combination', styleTags: brief.styleKeywords, matchedSellingPoints: [], round: 1 }; checkpoint('logo');
   }
   const copyText = draft.copy.fields.map(f => `${f.label}：${f.content}`).join('\n');
@@ -42,15 +42,15 @@ export async function generateQuickDesign(brief: DesignBrief, state: StudioState
     const designDirection = structureReference
       ? '第一张参考图是必须保持结构、器型比例、瓶盖和开口方式的产品，重新设计其视觉。第二张是必须准确使用的品牌 Logo。'
       : `从零原创设计完整产品的瓶身形状、比例、瓶肩、瓶盖或泵头、开口与取用方式、材质、表面工艺和标签。根据产品品类、容量、定位与使用场景自主决定合理结构。${styleReference ? '第一张图仅作配色、材质氛围和视觉风格参考，不锁定其瓶型、轮廓或开口，不得照搬其中的商标或文字。第二张是必须准确使用的品牌 Logo。' : '唯一参考图是必须准确使用的品牌 Logo，仅供品牌标识使用，不是瓶身结构参考。'}`;
-    const prompt = `设计产品瓶身及标签。${designDirection}输出一张精致的产品展示图，包含清晰正面主视图和较小背面视图，完整展示产品，温暖白底。按实际版面合理安排以下文案，品牌和产品名清晰完整：\n${copyText}\n${facts}`;
+    const prompt = `设计产品内包装（瓶身、瓶盖及标签）。${designDirection}按实际版面合理安排以下文案，品牌和产品名清晰完整：\n${copyText}\n${facts}\n输出一张纯白色 #FFFFFF 背景的三视图：从左到右为同一产品的完整正面、完整侧面、完整背面，三者同尺度、同基线、不重叠、不裁切，留足间距。三个视图的瓶型、瓶盖、材质和品牌标志完全一致，侧面是准确90度、背面是准确180度视角。只有这三个正交视图，不要场景主图、透视样机、额外瓶子、外包装盒、道具、色块背景、渐变、视角标注或说明卡。`;
     const reference = structureReference || styleReference;
     const url = await image('product', prompt, [...(reference ? [reference] : []), draft.logo.imageUrl]);
     // Use the original design as its structure preview in the professional workflow.
-    if (!structureReference) draft.container = { ...draft.container, sketchUrl: url };
-    draft.product = { id: `product-ai-studio-${Date.now()}`, imageUrl: url, styleDirection: state.styleHint || '品牌统一设计', containerType: { ...draft.container, volume: draft.container.volumeOptions[0] }, cmf: { colorScheme: [], material: '见设计图，生产前确认', finish: '见设计图，生产前确认' }, matchedSellingPoints: brief.product.coreSellingPoints.map(p => p.point), avoidedPainPoints: [], viewMode: 'two_view', copyApplied: draft.copy.fields, round: 1, renderMode: 'direct_ai', generationStatus: 'completed', generationPrompt: prompt, createdAt: new Date().toISOString() }; checkpoint('product');
+    draft.container = { ...draft.container, viewMode: 'three_view', ...(!structureReference ? { sketchUrl: url } : {}) };
+    draft.product = { id: `product-ai-studio-${Date.now()}`, imageUrl: url, styleDirection: state.styleHint || '品牌统一设计', containerType: { ...draft.container, volume: draft.container.volumeOptions[0] }, cmf: { colorScheme: [], material: '见设计图，生产前确认', finish: '见设计图，生产前确认' }, matchedSellingPoints: brief.product.coreSellingPoints.map(p => p.point), avoidedPainPoints: [], viewMode: 'three_view', copyApplied: draft.copy.fields, round: 1, renderMode: 'direct_ai', generationStatus: 'completed', generationPrompt: prompt, createdAt: new Date().toISOString() }; checkpoint('product');
   }
   if (!draft.packaging) {
-    const prompt = `为产品设计配套外包装盒。第一张参考是已选产品设计，第二张是品牌Logo。设计主角必须是外包装盒，展示完整盒子的正面和背侧面，产品仅可作为小比例参照，保持同一套品牌配色、字体与图形。不可只输出瓶身。合理安排以下实际文案：\n${copyText}\n${facts}`;
+    const prompt = `为产品设计配套外包装盒。第一张参考是已选产品设计，第二张是品牌Logo。保持同一套品牌配色、字体与图形，合理安排以下实际文案：\n${copyText}\n${facts}\n输出一张纯白色 #FFFFFF 背景的外包装三视图：从左到右为同一盒子的完整正面、完整侧面、完整背面，三者同尺度、同基线、不重叠、不裁切，留足间距。三个视图结构、比例和品牌设计一致，侧面是准确90度、背面是准确180度视角。只有这三个正交视图，不输出瓶身、场景主图、透视样机、额外盒子、道具、色块背景、渐变、视角标注或说明卡。`;
     const url = await image('packaging', prompt, [draft.product.imageUrl, draft.logo.imageUrl]);
     draft.packaging = { id: `packaging-ai-studio-${Date.now()}`, boxTypeId: 'ai-generated-package', previewImageUrl: url, faces: [{ face: 'front', elements: [{ type: 'logo', content: brief.brand.name, position: '顶部' }, { type: 'product_name', content: brief.product.name, position: '中央' }] }, { face: 'back', elements: draft.copy.fields.map(f => ({ type: 'decoration' as const, content: f.content, position: f.label })) }], palette: [], costEstimate: '生产前核算', round: 1, renderMode: 'direct_ai_preview', directionName: state.styleHint || '配套包装', generationPrompt: prompt, createdAt: new Date().toISOString() }; checkpoint('packaging');
   }

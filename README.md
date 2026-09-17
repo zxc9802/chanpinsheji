@@ -122,6 +122,17 @@ explicitly preserve an existing bottle structure. New uploads default to style
 reference; legacy references retain structure preservation. The original six-step workflow stays available
 through the mode switch and shares the same project assets.
 
+- In one-click mode, all new assets use a pure white background. Inner packaging
+  and outer packaging use equally scaled front, side and back views on one
+  landscape image; Logo stays a single flat design. Existing images are retained.
+- "返回第一步" reopens the current document facts and generation settings without
+  parsing the document again. "新建项目" saves the current project in history and
+  starts with an empty document; "返回设计结果" restores the existing results.
+- The edit panel accepts one optional PNG/JPEG/WebP reference (up to 15MB),
+  either selected or dropped onto the input area. A reference alone can guide
+  an edit. The original remains image 1, the reference image 2, and regional masks
+  apply only to the original. Whole edits retain white backgrounds and the
+  product/packaging three-view layout.
 - Browser IndexedDB saves partial progress, task IDs, detected polygons and
   adopted versions. Continuing a saved image task polls its existing `jobId`.
   Jobs use the existing in-memory queue: a server restart or 15 minutes after
