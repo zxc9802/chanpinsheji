@@ -16,6 +16,8 @@ import { emptyMarketingImageProject, type MarketingImageProjectState } from "@/t
 import { emptyDeliveryState, type DeliveryState, type ExportRecord, type ProjectTemplate, type QualityCheckItem } from "@/types/delivery";
 import { loadProjectIndex, loadProjectState, requestPersistentProjectStorage, saveProjectIndex, saveProjectState, type StoredProjectSummary } from "@/lib/project-storage";
 
+import { emptyStudioState, type StudioState, type QuickBundle, type AssetKind } from "@/types/studio";
+
 const LEGACY_STORAGE_KEY = "packaging-agent:project";
 const LEGACY_LOGO_TYPES:LogoType[]=["wordmark","lettermark","pictorial","abstract","combination","emblem"];
 const isRasterAiImage=(url?:string)=>Boolean(url&&(!url.startsWith("data:image/svg+xml")||/data%3Aimage%2F(?:jpeg|png|webp)|https?%3A/i.test(url)));
@@ -111,6 +113,7 @@ function migratePackagingProject(input:PackagingProjectState):PackagingProjectSt
 }
 
 type ProjectState = {
+  studio: StudioState;
   brief: DesignBrief;
   briefFieldSources: BriefFieldSources;
   completedSteps: number[];
@@ -124,6 +127,7 @@ type ProjectState = {
 };
 
 const createEmptyProjectState = (projectId = `project-${Date.now()}`): ProjectState => ({
+  studio: emptyStudioState(),
   brief: { ...emptyDesignBrief(), projectId },
   briefFieldSources: {},
   completedSteps: [],
@@ -139,6 +143,7 @@ const createEmptyProjectState = (projectId = `project-${Date.now()}`): ProjectSt
 function normalizeProjectState(stored: Partial<ProjectState>): ProjectState {
   const parsed = removeSimulationData(stored);
   return {
+    studio: { ...emptyStudioState(), ...parsed.studio },
     brief: parsed.brief ? importDesignBrief(parsed.brief) : emptyDesignBrief(),
     briefFieldSources: parsed.briefFieldSources && typeof parsed.briefFieldSources === "object" ? parsed.briefFieldSources : {},
     completedSteps: Array.isArray(parsed.completedSteps)
@@ -185,6 +190,9 @@ function projectSummary(state: ProjectState, createdAt?: string): StoredProjectS
 }
 
 type DesignBriefContextValue = ProjectState & {
+  updateStudio: (projectId: string, updater: (state: StudioState) => StudioState) => void;
+  commitStudioBundle: (projectId: string, bundle: QuickBundle) => void;
+  adoptStudioImage: (projectId: string, kind: AssetKind, url: string, instruction: string) => void;
   hydrated: boolean;
   storageError?: string;
   projects: StoredProjectSummary[];
@@ -465,9 +473,62 @@ export function DesignBriefProvider({ children }: { children: React.ReactNode })
     });
   }, []);
 
+  const updateStudio = useCallback((projectId: string, updater: (studio: StudioState) => StudioState) => {
+    setState(old => old.brief.projectId === projectId ? { ...old, studio: updater(old.studio) } : old);
+  }, []);
+  const commitStudioBundle = useCallback((projectId: string, bundle: QuickBundle) => {
+    setState(old => {
+      if (old.brief.projectId !== projectId) return old;
+      const now = new Date().toISOString();
+      const logoAsset: BrandLogoAsset = { type: "logo", id: `${projectId}:logo`, brandName: old.brief.brand.name, projectId, candidate: bundle.logo, finalizedAt: now };
+      const copyAsset: BrandCopyAsset = { type: "copy", id: `${projectId}:copy`, brandName: old.brief.brand.name, projectId, copyPackage: bundle.copy, finalizedAt: now };
+      const versions = (["logo", "product", "packaging"] as const).map(kind => ({ id: crypto.randomUUID(), kind, imageUrl: kind === "packaging" ? bundle.packaging.previewImageUrl : bundle[kind].imageUrl, instruction: "一键生成", createdAt: now }));
+      return { ...old,
+        studio: { ...old.studio, draft: bundle, stage: "completed", pending: undefined, error: undefined, versions: [...old.studio.versions, ...versions] },
+        logoProject: { ...old.logoProject, candidates: [...old.logoProject.candidates.filter(c => c.id !== bundle.logo.id), bundle.logo], finalLogoId: bundle.logo.id },
+        copyProject: { ...old.copyProject, packages: [...old.copyProject.packages.filter(c => c.id !== bundle.copy.id), bundle.copy], finalPackage: bundle.copy },
+        productDesign: { ...old.productDesign, selectedContainerTypeId: bundle.container.id, selectedVolume: bundle.container.volumeOptions[0], customContainers: [...old.productDesign.customContainers.filter(c => c.id !== bundle.container.id), bundle.container], structureConfirmed: true, candidates: [...old.productDesign.candidates.filter(c => c.id !== bundle.product.id), bundle.product], finalDesignId: bundle.product.id, finalWarnings: ["一键方案待质检确认"] },
+        packagingProject: { ...old.packagingProject, selectedBoxTypeId: bundle.packaging.boxTypeId, candidates: [...old.packagingProject.candidates.filter(c => c.id !== bundle.packaging.id), bundle.packaging], finalDesign: { candidate: bundle.packaging, boxType: aiGeneratedBoxType, finalizedAt: now } },
+        completedSteps: [1, 2, 3, 4, 5], delivery: { ...old.delivery, report: [], projectCompleted: false, completedAt: undefined },
+        brandAssets: [...old.brandAssets.filter(a => a.id !== logoAsset.id && a.id !== copyAsset.id), logoAsset, copyAsset],
+      };
+    });
+  }, []);
+  const adoptStudioImage = useCallback((projectId: string, kind: AssetKind, url: string, instruction: string) => {
+    setState(old => {
+      if (old.brief.projectId !== projectId) return old;
+      const now = new Date().toISOString();
+      const previousUrl = kind === "logo" ? old.logoProject.candidates.find(c => c.id === old.logoProject.finalLogoId)?.imageUrl : kind === "product" ? old.productDesign.candidates.find(c => c.id === old.productDesign.finalDesignId)?.imageUrl : old.packagingProject.finalDesign?.candidate.previewImageUrl;
+      const initialVersions = previousUrl && !old.studio.versions.some(v => v.kind === kind && v.imageUrl === previousUrl) ? [{ id: crypto.randomUUID(), kind, imageUrl: previousUrl, instruction: "修改前版本", createdAt: now }] : [];
+      const next = { ...old, studio: { ...old.studio, versions: [...old.studio.versions, ...initialVersions, { id: crypto.randomUUID(), kind, imageUrl: url, instruction, createdAt: now }] }, completedSteps: old.completedSteps.filter(s => s !== 6), delivery: { ...old.delivery, report: [], projectCompleted: false, completedAt: undefined } };
+      if (kind === "logo") {
+        const base = old.logoProject.candidates.find(c => c.id === old.logoProject.finalLogoId);
+        if (!base) return old;
+        const candidate = { ...base, id: `logo-ai-studio-${Date.now()}`, imageUrl: url, parentId: base.id, round: base.round + 1 };
+        next.logoProject = { ...old.logoProject, candidates: [...old.logoProject.candidates, candidate], finalLogoId: candidate.id };
+        next.brandAssets = old.brandAssets.map(a => a.type === "logo" && a.projectId === projectId ? { ...a, candidate, finalizedAt: now } : a);
+        next.studio.draft = { ...old.studio.draft, logo: candidate };
+        next.productDesign = { ...old.productDesign, candidates: old.productDesign.candidates.map(c => c.id === old.productDesign.finalDesignId ? { ...c, qualityReview: undefined, qualityReviewStatus: undefined } : c), finalWarnings: ["Logo 已修改，配套设计需要重新核对"] };
+      } else if (kind === "product") {
+        const base = old.productDesign.candidates.find(c => c.id === old.productDesign.finalDesignId);
+        if (!base) return old;
+        const candidate = { ...base, id: `product-ai-studio-${Date.now()}`, imageUrl: url, parentId: base.id, round: base.round + 1, qualityReview: undefined, qualityReviewStatus: undefined, createdAt: now };
+        next.productDesign = { ...old.productDesign, candidates: [...old.productDesign.candidates, candidate], finalDesignId: candidate.id, finalWarnings: ["修改后需要重新质检"] };
+        next.studio.draft = { ...old.studio.draft, product: candidate };
+      } else {
+        const base = old.packagingProject.finalDesign;
+        if (!base) return old;
+        const candidate = { ...base.candidate, id: `packaging-ai-studio-${Date.now()}`, previewImageUrl: url, parentId: base.candidate.id, round: base.candidate.round + 1, subjectReview: undefined, subjectReviewStatus: undefined, createdAt: now };
+        next.packagingProject = { ...old.packagingProject, candidates: [...old.packagingProject.candidates, candidate], finalDesign: { ...base, candidate, finalizedAt: now } };
+        next.studio.draft = { ...old.studio.draft, packaging: candidate };
+      }
+      return next;
+    });
+  }, []);
+
   const value = useMemo(
-    () => ({ ...state, hydrated, storageError, projects, activeProjectId, createProject, switchProject, setBrief, importBrief, importParsedBrief, markBriefFieldUser, completeStep, updateLogoProject, finalizeLogo, reopenLogoSelection, updateCopyProject, finalizeCopy, reopenCopySelection, updateProductDesign, finalizeProductDesign, reopenProductDesign, updatePackagingProject, finalizePackaging, reopenPackaging, updateMarketingImages, updateQualityReport, completeExport, saveTemplate, applyTemplate }),
-    [state, hydrated, storageError, projects, activeProjectId, createProject, switchProject, setBrief, importBrief, importParsedBrief, markBriefFieldUser, completeStep, updateLogoProject, finalizeLogo, reopenLogoSelection, updateCopyProject, finalizeCopy, reopenCopySelection, updateProductDesign, finalizeProductDesign, reopenProductDesign, updatePackagingProject, finalizePackaging, reopenPackaging, updateMarketingImages, updateQualityReport, completeExport, saveTemplate, applyTemplate],
+    () => ({ ...state, updateStudio, commitStudioBundle, adoptStudioImage, hydrated, storageError, projects, activeProjectId, createProject, switchProject, setBrief, importBrief, importParsedBrief, markBriefFieldUser, completeStep, updateLogoProject, finalizeLogo, reopenLogoSelection, updateCopyProject, finalizeCopy, reopenCopySelection, updateProductDesign, finalizeProductDesign, reopenProductDesign, updatePackagingProject, finalizePackaging, reopenPackaging, updateMarketingImages, updateQualityReport, completeExport, saveTemplate, applyTemplate }),
+    [state, updateStudio, commitStudioBundle, adoptStudioImage, hydrated, storageError, projects, activeProjectId, createProject, switchProject, setBrief, importBrief, importParsedBrief, markBriefFieldUser, completeStep, updateLogoProject, finalizeLogo, reopenLogoSelection, updateCopyProject, finalizeCopy, reopenCopySelection, updateProductDesign, finalizeProductDesign, reopenProductDesign, updatePackagingProject, finalizePackaging, reopenPackaging, updateMarketingImages, updateQualityReport, completeExport, saveTemplate, applyTemplate],
   );
   return <DesignBriefContext.Provider value={value}>{children}</DesignBriefContext.Provider>;
 }

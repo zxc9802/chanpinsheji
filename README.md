@@ -111,3 +111,32 @@ actions tied to the current ChatGPT user. Leave public content anonymous.
 
 - [vinext Documentation](https://github.com/cloudflare/vinext)
 - [Drizzle D1 Guide](https://orm.drizzle.team/docs/get-started/d1-new)
+
+## One-click design studio
+
+The default `/studio` route accepts a bottle/product reference and a product
+brief (DOCX, text PDF, TXT, or image). It builds copy, Logo, product and packaging
+in sequence using fal `high`. The original six-step workflow stays available
+through the mode switch and shares the same project assets.
+
+- Browser IndexedDB saves partial progress, task IDs, detected polygons and
+  adopted versions. Continuing a saved image task polls its existing `jobId`.
+  Jobs use the existing in-memory queue: a server restart or 15 minutes after
+  completion can expire them. The UI requires an explicit retry after expiry;
+  it does not silently submit another paid request.
+- OCR/object regions use the existing `YUNWU_API_KEY` vision configuration.
+  The selected object can be refined with `fal-ai/sam-3/image`, using `FAL_KEY`.
+  These are billed calls. Missing vision configuration leaves manual selection
+  available. Text polygons and object boundaries can be corrected manually.
+- Regional editing sends an alpha mask to fal Sunburst edit. The browser then
+  composites only the selected pixels into the original; unselected pixels are
+  preserved. Results are previewed before adoption. Whole-image editing and
+  version recovery are also available.
+- Uploads and generated assets remain in this browser's project storage.
+  Documents' missing factual claims are not filled into one-click prompts.
+  OCR and generated wording still need visual review before export.
+- Adopting an edit invalidates the delivery report. Logo/product changes can
+  be propagated using the explicit "同步整套设计" action; this generates new
+  product and packaging images and retains previous versions.
+
+Validation: `npm run build` and `node --test tests/*.test.mjs`.

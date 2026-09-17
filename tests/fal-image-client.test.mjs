@@ -83,3 +83,19 @@ test("fal does not charge or submit when its key is missing", async t => {
   await assert.rejects(fetchFalImage({ apiKey: "", prompt: "test" }), /密钥未配置/);
   assert.equal(fetchMock.mock.callCount(), 0);
 });
+
+test('regional edit sends the PNG mask and original as the first reference', async t => {
+  await withProvider(t, (url, init) => Response.json(init.method === 'POST' ? queued : url.endsWith('/status') ? { status: 'COMPLETED' } : { images: [{ url: image }] }), async ({ args, requests }) => {
+    await fetchFalImage({ ...args, referenceImages: ['data:image/png;base64,original'], maskImage: 'data:image/png;base64,mask' });
+    const body = JSON.parse(requests[0].body);
+    assert.equal(body.mask_url, 'data:image/png;base64,mask');
+    assert.equal(body.image_urls[0], 'data:image/png;base64,original');
+    assert.equal(body.quality, 'high');
+    assert.equal(body.image_size, 'auto');
+  });
+});
+test('a regional edit without an original fails before billing or submission', async t => {
+  const request = t.mock.method(globalThis, 'fetch', () => { throw Error('unexpected request'); });
+  await assert.rejects(fetchFalImage({ apiKey: 'test', prompt: 'edit', maskImage: 'mask' }), /缺少原图/);
+  assert.equal(request.mock.callCount(), 0);
+});

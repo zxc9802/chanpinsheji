@@ -5,8 +5,9 @@ import { fetchFalImage } from "@/lib/fal-image-client";
 import { fetchAiForm, fetchAiJson } from "@/lib/server-ai-client";
 
 type ImagePayload = { data?: { url?: string; b64_json?: string }[]; usage?: { generated_images?: number; total_tokens?: number } };
-type ImageRequest = { prompts?: string[]; provider?: ImageProviderName; referenceImages?: (string | undefined)[]; referenceImageGroups?: string[][]; size?:string; quality?:"low"|"medium"|"high" };
+type ImageRequest = { maskImage?: string; prompts?: string[]; provider?: ImageProviderName; referenceImages?: (string | undefined)[]; referenceImageGroups?: string[][]; size?:string; quality?:"low"|"medium"|"high" };
 type NormalizedImageRequest = {
+  maskImage?: string;
   prompts: string[];
   provider: ImageProviderName;
   referenceImages: (string | undefined)[];
@@ -34,8 +35,8 @@ function imageUrl(payload: ImagePayload) {
   return undefined;
 }
 
-async function generateOne(prompt: string, provider: ImageProviderName, referenceImages:string[]=[],size?:string,quality?:"low"|"medium"|"high",billingUserId?:string) {
-  if (provider === "fal") return fetchFalImage({ apiKey: aiServerConfig.fal.apiKey, prompt, referenceImages, size, billingUserId });
+async function generateOne(prompt: string, provider: ImageProviderName, referenceImages:string[]=[],size?:string,quality?:"low"|"medium"|"high",billingUserId?:string,maskImage?:string) {
+  if (provider === "fal") return fetchFalImage({ apiKey: aiServerConfig.fal.apiKey, prompt, referenceImages, size, billingUserId, maskImage });
   const referenceImage=referenceImages[0];
   if (provider === "yunwu") {
     if(referenceImage){const form=new FormData();form.append("model",aiServerConfig.yunwu.imageModel);form.append("prompt",prompt);for(const [index,url] of referenceImages.slice(0,10).entries()){const source=await fetch(url);if(!source.ok)throw new Error(`参考图 ${index+1} 读取失败：HTTP ${source.status}`);const blob=await source.blob();form.append(referenceImages.length>1?"image[]":"image",new File([blob],`reference-${index+1}.png`,{type:blob.type||"image/png"}));}form.append("n","1");form.append("size",size||aiServerConfig.yunwu.imageSize);form.append("quality",quality||aiServerConfig.yunwu.imageQuality);form.append("output_format","jpeg");return fetchAiForm<ImagePayload>({url:`${aiServerConfig.yunwu.baseUrl.replace(/\/$/,"")}/v1/images/edits`,apiKey:aiServerConfig.yunwu.apiKey,provider:"yunwu",generator:"image-edit",timeoutMs:120000,form,billingUserId});}
@@ -75,11 +76,11 @@ async function generateOne(prompt: string, provider: ImageProviderName, referenc
   });
 }
 
-async function generateInBatches(prompts: string[], provider: ImageProviderName, referenceImages:(string|undefined)[],referenceImageGroups:string[][],size?:string,quality?:"low"|"medium"|"high",billingUserId?:string,onImage?: (index:number,result:Awaited<ReturnType<typeof generateOne>>) => void) {
+async function generateInBatches(prompts: string[], provider: ImageProviderName, referenceImages:(string|undefined)[],referenceImageGroups:string[][],size?:string,quality?:"low"|"medium"|"high",billingUserId?:string,onImage?: (index:number,result:Awaited<ReturnType<typeof generateOne>>) => void,maskImage?:string) {
   const results: PromiseSettledResult<Awaited<ReturnType<typeof generateOne>>>[] = [];
   for (let index = 0; index < prompts.length; index += 3) {
     results.push(...await Promise.allSettled(prompts.slice(index, index + 3).map(async (prompt,offset) => {
-      const result=await generateOne(prompt, provider, referenceImageGroups[index+offset]?.length?referenceImageGroups[index+offset]:referenceImages[index+offset]?[referenceImages[index+offset]!]:[],size,quality,billingUserId);
+      const result=await generateOne(prompt, provider, referenceImageGroups[index+offset]?.length?referenceImageGroups[index+offset]:referenceImages[index+offset]?[referenceImages[index+offset]!]:[],size,quality,billingUserId,maskImage);
       onImage?.(index+offset,result);
       return result;
     })));
@@ -98,7 +99,9 @@ function normalizeImageRequest(body: ImageRequest): NormalizedImageRequest {
   const referenceImageGroups=(body.referenceImageGroups||[]).slice(0,prompts.length).map(group=>(Array.isArray(group)?group:[]).filter(value=>typeof value==="string"&&(value.startsWith("data:image/")||/^https:\/\//i.test(value))).slice(0,10));
   const size=typeof body.size==="string"&&/^(1024x1024|1024x1536|1536x1024|2K)$/.test(body.size)?body.size:undefined;
   const quality=["low","medium","high"].includes(body.quality||"")?body.quality:undefined;
-  return { prompts, provider, referenceImages, referenceImageGroups, size, quality };
+  const maskImage = body.maskImage;
+  if (maskImage && (provider !== "fal" || prompts.length !== 1 || !/^data:image\/png;base64,[A-Za-z0-9+/=]+$/.test(maskImage) || maskImage.length > 16_000_000 || !(referenceImageGroups[0]?.length || referenceImages[0]))) throw new ImageRequestError("局部编辑需要 fal、单张原图和有效 PNG 蒙版", 400);
+  return { prompts, provider, referenceImages, referenceImageGroups, size, quality, maskImage };
 }
 
 async function runImageJob(body: QueuedImageRequest,publishProgress?: (result:ImageJobResult) => void): Promise<ImageJobResult> {
@@ -108,7 +111,7 @@ async function runImageJob(body: QueuedImageRequest,publishProgress?: (result:Im
     images[index]=imageUrl(result.data);
     durationMs=Math.max(durationMs,result.usage.durationMs);
     publishProgress?.({data:[...images],usage:{provider:body.provider,durationMs,images:images.filter(Boolean).length}});
-  });
+  },body.maskImage);
   const completedImages = results.map((result) => result.status === "fulfilled" ? imageUrl(result.value.data) : undefined);
   const succeeded = completedImages.filter(Boolean).length;
   if (succeeded / body.prompts.length <= .5) {

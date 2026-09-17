@@ -17,7 +17,7 @@ function responseError(response: Response, error?: string) {
   return new Error(error || `AI 服务返回 ${response.status}`);
 }
 
-async function startImageJob(body: unknown) {
+export async function startImageJob(body: unknown) {
   const response = await fetch("/api/ai/image", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
   const payload = await readPayload<ApiPayload<ImageJobStart>>(response);
   if (!response.ok || response.status !== 202) throw responseError(response, payload.error);
@@ -28,7 +28,7 @@ async function startImageJob(body: unknown) {
 const IMAGE_JOB_POLL_MS = 1500;
 const IMAGE_JOB_TIMEOUT_MS = 10 * 60 * 1000;
 
-async function pollImageJob<T>(jobId: string,onProgress?: (data:T) => void): Promise<AiResponse<T>> {
+export async function pollImageJob<T>(jobId: string,onProgress?: (data:T) => void): Promise<AiResponse<T>> {
   const deadline = Date.now() + IMAGE_JOB_TIMEOUT_MS;
   let lastProgress = "";
   while (Date.now() < deadline) {

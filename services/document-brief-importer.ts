@@ -61,7 +61,7 @@ async function extractPdf(file: File) {
 export async function extractDocumentText(file: File) {
   if (file.size > MAX_FILE_SIZE) throw new Error("文件超过 15MB，请压缩后重新上传");
   const extension = file.name.split(".").pop()?.toLowerCase();
-  const text = extension === "docx" ? await extractDocx(file) : extension === "pdf" ? await extractPdf(file) : "";
+  const text = extension === "docx" ? await extractDocx(file) : extension === "pdf" ? await extractPdf(file) : extension === "txt" ? cleanText(await file.text()) : "";
   if (!text) throw new Error(extension === "pdf" ? "PDF 中没有可提取文字，可能是扫描件，请先进行 OCR" : "文档中没有读取到有效文字");
   return { text: text.slice(0, MAX_TEXT_LENGTH), truncated: text.length > MAX_TEXT_LENGTH, sourceLength: text.length };
 }
