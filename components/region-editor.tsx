@@ -1,8 +1,8 @@
 'use client';
 import { useEffect, useRef, useState } from 'react';
-import type { DesignRegion, Point } from '@/types/studio';
+import type { AssetKind, DesignRegion, Point } from '@/types/studio';
 import { buildRegionEditPrompt, rectangleRegion, regionAtPoint } from '@/lib/design-regions';
-import { loadImage, localImage, mergeRegion, regionTask, selectionMask } from '@/lib/studio-images';
+import { loadImage, localImage, mergeRegion, prepareUpload, regionTask, selectionMask } from '@/lib/studio-images';
 import { pollImageJob, startImageJob } from '@/lib/ai-client';
 
 export type PendingEdit = { jobId: string; original: string; region?: DesignRegion; segmentedMask?: string; instruction: string; replacementText: string };
@@ -10,11 +10,15 @@ export function RegionEditor(props: {
   imageUrl: string; brandName: string; productName: string; regions: DesignRegion[];
   onRegions: (regions: DesignRegion[]) => void; onAdopt: (url: string, instruction: string) => void;
   autoRecognize?: boolean;
+  assetKind?: AssetKind;
   pending?: PendingEdit; onPending: (pending?: PendingEdit) => void;
 }) {
   const [source, setSource] = useState(''), [regions, setRegions] = useState(props.regions);
   const [selected, setSelected] = useState<DesignRegion>(), [whole, setWhole] = useState(false), [drawing, setDrawing] = useState(false);
   const [instruction, setInstruction] = useState(''), [replacementText, setReplacement] = useState('');
+  const [reference, setReference] = useState<{ name: string; dataUrl: string }>();
+  const [referenceDragging, setReferenceDragging] = useState(false);
+  const referenceDragDepth = useRef(0);
   const [busy, setBusy] = useState(''), [error, setError] = useState(''), [preview, setPreview] = useState(''), [before, setBefore] = useState(false);
   const [segmentedMask, setSegmentedMask] = useState<string>(), [overlay, setOverlay] = useState('');
   const [dimensions, setDimensions] = useState({ width: 1, height: 1 });
@@ -26,7 +30,7 @@ export function RegionEditor(props: {
   const alive = useRef(true), drag = useRef<{ start?: Point; vertex?: number } | null>(null);
   useEffect(() => { alive.current = true; localImage(props.imageUrl).then(async url => { const img = await loadImage(url); if (alive.current) { setSource(url); setDimensions({ width: img.width, height: img.height }); } }).catch(e => { if (alive.current) setError(e.message); }); return () => { alive.current = false; }; }, [props.imageUrl]);
   const saveRegions = (next: DesignRegion[]) => { setRegions(next); props.onRegions(next); };
-  const choose = (region?: DesignRegion) => { setSelected(region); setWhole(false); setDrawing(false); setReplacement(''); setSegmentedMask(undefined); setOverlay(''); setPreview(''); };
+  const choose = (region?: DesignRegion) => { setSelected(region); setWhole(false); setDrawing(false); setReplacement(''); setSegmentedMask(undefined); setOverlay(''); setPreview(''); setError(''); };
   async function task(label: string, run: () => Promise<void>) { if (busy) return; setBusy(label); setError(''); try { await run(); } catch (e) { if (alive.current) setError(e instanceof Error ? e.message : '操作失败'); } finally { if (alive.current) setBusy(''); } }
   const recognize = () => task('正在识别文字、Logo 和物体…', async () => {
     props.onRegions(regions); // Persist the attempt before submitting, so refresh does not auto-submit again.
@@ -49,14 +53,19 @@ export function RegionEditor(props: {
     const mask = await selectionMask(source, selected, result.maskUrl);
     if (alive.current) { setSegmentedMask(result.maskUrl); setOverlay(mask.overlay); }
   });
+  const uploadReference = (file: File) => task('正在读取修改参考图…', async () => {
+    if (!['image/png', 'image/jpeg', 'image/webp'].includes(file.type)) throw new Error('修改参考图只支持 PNG、JPG 或 WebP');
+    const dataUrl = await prepareUpload(file);
+    if (alive.current) setReference({ name: file.name, dataUrl });
+  });
   const generate = (resume?: PendingEdit) => task(resume ? '正在查询已提交任务…' : '正在生成修改预览…', async () => {
     const base = resume?.original || source, region = resume ? resume.region : whole ? undefined : selected;
     if (!whole && !region && !resume) throw new Error('请点选区域或选择整体修改');
     const maskSource = resume ? resume.segmentedMask : segmentedMask;
     const mask = region ? await selectionMask(base, region, maskSource) : undefined;
     const editInstruction = resume?.instruction ?? instruction, replacement = resume?.replacementText ?? replacementText;
-    const jobId = resume?.jobId || await startImageJob({ provider: 'fal', prompts: [buildRegionEditPrompt({ region, instruction: editInstruction, replacementText: replacement, brandName: props.brandName, productName: props.productName })], referenceImageGroups: [[base]], ...(mask ? { maskImage: mask.apiMask } : {}) });
-    const pending = { jobId, original: base, region, segmentedMask: maskSource, instruction: editInstruction, replacementText: replacement };
+    const jobId = resume?.jobId || await startImageJob({ provider: 'fal', prompts: [buildRegionEditPrompt({ region, instruction: editInstruction, replacementText: replacement, brandName: props.brandName, productName: props.productName, assetKind: props.assetKind, hasReference: !!reference })], referenceImageGroups: [[base, ...(reference ? [reference.dataUrl] : [])]], quality: 'high', ...(mask ? { maskImage: mask.apiMask } : {}) });
+    const pending = { jobId, original: base, region, segmentedMask: maskSource, instruction: editInstruction || (reference ? `参考图：${reference.name}` : ''), replacementText: replacement };
     if (alive.current) props.onPending(pending);
     const result = await pollImageJob<string[]>(jobId);
     if (!result.data[0]) throw new Error('编辑任务没有返回图片');
@@ -113,7 +122,15 @@ export function RegionEditor(props: {
         {selected.kind === 'text' && <label>替换成什么文字？<textarea disabled={locked} value={replacementText} onChange={e => setReplacement(e.target.value)} placeholder="需要指定文字时填写；留空则让 AI 调整表达" /></label>}
         {['bottle', 'packaging', 'logo'].includes(selected.kind) && <button disabled={locked} onClick={refine}>精细识别边缘</button>}
       </>}
-      {(selected || whole) && <><label>修改想法 <small>选填</small><textarea disabled={locked} value={instruction} onChange={e => setInstruction(e.target.value)} placeholder="例如：把盒子改成磨砂深绿色，保持文字和 Logo" /></label><button className="studio-primary" disabled={locked || !source} onClick={() => generate()}>{instruction.trim() || replacementText.trim() ? '按要求生成预览' : '让 AI 换一个方案'}</button><p className="studio-help">{whole ? '整张设计都会参与修改。' : '只有选区内的像素会被替换。'}修改先预览，采用后保留历史版本。文字替换后请核对字形和内容；配套文案可在下方单独编辑。</p></>}
+      {(selected || whole) && <><div className={`region-edit-input${referenceDragging ? ' is-dragging' : ''}`}
+        onDragEnter={e => { if (!e.dataTransfer.types.includes('Files')) return; e.preventDefault(); referenceDragDepth.current++; if (!locked) setReferenceDragging(true); }}
+        onDragOver={e => { if (!e.dataTransfer.types.includes('Files')) return; e.preventDefault(); e.dataTransfer.dropEffect = locked ? 'none' : 'copy'; }}
+        onDragLeave={e => { e.preventDefault(); referenceDragDepth.current = Math.max(0, referenceDragDepth.current - 1); if (!referenceDragDepth.current) setReferenceDragging(false); }}
+        onDrop={e => { e.preventDefault(); referenceDragDepth.current = 0; setReferenceDragging(false); if (locked) return; const files = e.dataTransfer.files; if (!files.length) return; if (files.length !== 1) { setError('每次请上传一张修改参考图'); return; } void uploadReference(files[0]); }}>
+        <label>修改想法 <small>选填</small><textarea disabled={locked} value={instruction} onChange={e => setInstruction(e.target.value)} placeholder="例如：参考上传图片的图案修改盒子，保持文字和 Logo" /></label>
+        <label className="region-reference-upload"><input type="file" aria-label="上传修改参考图" accept="image/png,image/jpeg,image/webp" disabled={locked} onChange={e => { const file = e.target.files?.[0]; if (file) void uploadReference(file); e.target.value = ''; }} /><strong>{referenceDragging ? '松开即可上传参考图' : reference ? '更换修改参考图' : '＋ 上传或拖入修改参考图'}</strong><small>选填 · PNG / JPG / WebP · 最大 15MB</small></label>
+        {reference && <div className="region-reference-preview"><img src={reference.dataUrl} alt="修改参考图" /><span>{reference.name}</span><button disabled={locked} onClick={() => setReference(undefined)}>移除参考图</button></div>}
+      </div><button className="studio-primary" disabled={locked || !source} onClick={() => generate()}>{instruction.trim() || replacementText.trim() || reference ? '按要求生成预览' : '让 AI 换一个方案'}</button><p className="studio-help">可只上传参考图，让 AI 决定修改方式。{whole ? '整张设计都会参与修改。' : '只有选区内的像素会被替换。'}修改先预览，采用后保留历史版本。文字替换后请核对字形和内容；配套文案可在下方单独编辑。</p></>}
       {busy && <div className="studio-busy" role="status"><i />{busy}</div>}
       {props.pending && !busy && !preview && <div className="studio-resume"><p>已提交编辑任务，继续查询不会重新生成。</p><button onClick={() => generate(props.pending)}>继续查询结果</button><button onClick={() => props.onPending(undefined)}>不采用该任务</button></div>}
       {error && <div className="studio-error" role="alert">{error}</div>}
