@@ -1,3 +1,18 @@
+## Primary image generation
+
+Image generation defaults to fal.ai GPT Image 2.5 Sunburst with `quality: high`.
+Set the server-only `FAL_KEY` (or existing `FAL_GPT_IMAGE2_API_KEY`) and set
+`AI_PROVIDER_IMAGE=fal` on deployments that previously selected Yunwu.
+The AI services page offers fal first; existing manual Yunwu/Doubao selections remain available.
+
+The existing API continues returning HTTP 202 + `jobId`. The browser polls
+`GET /api/ai/image?jobId=...`; the worker submits one fal queue request per image,
+polls its returned status URL, and retrieves the result only after completion.
+Text prompts use `openai/gpt-image-2.5/sunburst/text-to-image`; reference images
+use `openai/gpt-image-2.5/sunburst/edit`. Each image has a six-minute deadline.
+Credits are reserved before submission, settled after a valid image result, and
+released on failure. Polling never submits another generation or settles again.
+
 # vinext-starter
 
 A clean full-stack starter running on

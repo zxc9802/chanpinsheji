@@ -1,13 +1,14 @@
 import { aiServerConfig, type ImageProviderName } from "@/lib/ai-config";
 import { ImageJobManager, type ImageJobResult } from "@/lib/image-job-manager";
 import { currentBillingUserId } from "@/lib/main-app-billing";
+import { fetchFalImage } from "@/lib/fal-image-client";
 import { fetchAiForm, fetchAiJson } from "@/lib/server-ai-client";
 
 type ImagePayload = { data?: { url?: string; b64_json?: string }[]; usage?: { generated_images?: number; total_tokens?: number } };
 type ImageRequest = { prompts?: string[]; provider?: ImageProviderName; referenceImages?: (string | undefined)[]; referenceImageGroups?: string[][]; size?:string; quality?:"low"|"medium"|"high" };
 type NormalizedImageRequest = {
   prompts: string[];
-  provider: "doubao" | "yunwu";
+  provider: ImageProviderName;
   referenceImages: (string | undefined)[];
   referenceImageGroups: string[][];
   size?: string;
@@ -33,7 +34,8 @@ function imageUrl(payload: ImagePayload) {
   return undefined;
 }
 
-async function generateOne(prompt: string, provider: "doubao" | "yunwu", referenceImages:string[]=[],size?:string,quality?:"low"|"medium"|"high",billingUserId?:string) {
+async function generateOne(prompt: string, provider: ImageProviderName, referenceImages:string[]=[],size?:string,quality?:"low"|"medium"|"high",billingUserId?:string) {
+  if (provider === "fal") return fetchFalImage({ apiKey: aiServerConfig.fal.apiKey, prompt, referenceImages, size, billingUserId });
   const referenceImage=referenceImages[0];
   if (provider === "yunwu") {
     if(referenceImage){const form=new FormData();form.append("model",aiServerConfig.yunwu.imageModel);form.append("prompt",prompt);for(const [index,url] of referenceImages.slice(0,10).entries()){const source=await fetch(url);if(!source.ok)throw new Error(`参考图 ${index+1} 读取失败：HTTP ${source.status}`);const blob=await source.blob();form.append(referenceImages.length>1?"image[]":"image",new File([blob],`reference-${index+1}.png`,{type:blob.type||"image/png"}));}form.append("n","1");form.append("size",size||aiServerConfig.yunwu.imageSize);form.append("quality",quality||aiServerConfig.yunwu.imageQuality);form.append("output_format","jpeg");return fetchAiForm<ImagePayload>({url:`${aiServerConfig.yunwu.baseUrl.replace(/\/$/,"")}/v1/images/edits`,apiKey:aiServerConfig.yunwu.apiKey,provider:"yunwu",generator:"image-edit",timeoutMs:120000,form,billingUserId});}
@@ -73,7 +75,7 @@ async function generateOne(prompt: string, provider: "doubao" | "yunwu", referen
   });
 }
 
-async function generateInBatches(prompts: string[], provider: "doubao" | "yunwu", referenceImages:(string|undefined)[],referenceImageGroups:string[][],size?:string,quality?:"low"|"medium"|"high",billingUserId?:string,onImage?: (index:number,result:Awaited<ReturnType<typeof generateOne>>) => void) {
+async function generateInBatches(prompts: string[], provider: ImageProviderName, referenceImages:(string|undefined)[],referenceImageGroups:string[][],size?:string,quality?:"low"|"medium"|"high",billingUserId?:string,onImage?: (index:number,result:Awaited<ReturnType<typeof generateOne>>) => void) {
   const results: PromiseSettledResult<Awaited<ReturnType<typeof generateOne>>>[] = [];
   for (let index = 0; index < prompts.length; index += 3) {
     results.push(...await Promise.allSettled(prompts.slice(index, index + 3).map(async (prompt,offset) => {
@@ -86,7 +88,8 @@ async function generateInBatches(prompts: string[], provider: "doubao" | "yunwu"
 }
 
 function normalizeImageRequest(body: ImageRequest): NormalizedImageRequest {
-  const provider = body.provider === "doubao" ? "doubao" : "yunwu";
+  const provider = body.provider && ["fal", "doubao", "yunwu"].includes(body.provider) ? body.provider : aiServerConfig.defaults.image;
+  if (provider === "fal" && !aiServerConfig.fal.apiKey) throw new ImageRequestError("fal.ai 图像密钥未配置", 503);
   if (provider === "yunwu" && (!aiServerConfig.yunwu.apiKey || !aiServerConfig.yunwu.imageModel)) throw new ImageRequestError("云雾图像密钥或模型未配置", 503);
   if (provider === "doubao" && (!aiServerConfig.doubao.apiKey || !aiServerConfig.doubao.imageModel)) throw new ImageRequestError("豆包 Ark 密钥或图像模型 ID 未配置", 503);
   const prompts = (body.prompts || []).slice(0, 20).map(String).filter(Boolean);
