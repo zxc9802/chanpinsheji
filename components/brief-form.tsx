@@ -2,6 +2,7 @@
 
 import { useId, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import { hasBriefContent } from "@/lib/design-content";
 import { exampleDesignBrief } from "@/lib/example-design-brief";
 import type { DesignBrief } from "@/types/design-brief";
 import type { BriefFieldSource } from "@/lib/brief-field-sources";
@@ -18,14 +19,14 @@ const includeCurrent = (options: string[], current: string) => current && !optio
 
 type FieldErrors = Record<string, string>;
 
-function Field({ label, required, count, error, source, children, wide = false }: {
-  label: string; required?: boolean; count?: string; error?: string; source?: BriefFieldSource; children: React.ReactNode; wide?: boolean;
+function Field({ label, count, error, source, children, wide = false }: {
+  label: string; count?: string; error?: string; source?: BriefFieldSource; children: React.ReactNode; wide?: boolean;
 }) {
   return (
     <label className={`form-field ${wide ? "wide" : ""} ${error ? "has-error" : ""} ${source === "ai" ? "is-ai" : ""}`}>
       <span className="field-label">
         <span>
-          {label}{required && <b> *</b>}
+          {label}
           {source === "ai" && <i className="ai-field-badge">AI 生成</i>}
           {source === "document" && <i className="doc-field-badge">文档提取</i>}
         </span>
@@ -80,13 +81,7 @@ export function BriefForm() {
   const sourceOf = (path: string) => briefFieldSources[path];
 
   const validate = () => {
-    const required: [string, string][] = [
-      ["brand.name", brief.brand.name], ["product.name", brief.product.name], ["product.industry", brief.product.industry],
-      ["product.category", brief.product.category], ["product.targetMarket", brief.product.targetMarket],
-      ["product.salesChannel", brief.product.salesChannel], ["consumer.ageRange", brief.consumer.ageRange],
-      ["brand.positioning", brief.brand.positioning],
-    ];
-    const next = Object.fromEntries(required.filter(([, value]) => !value.trim()).map(([key]) => [key, "请填写此项"]));
+    const next: FieldErrors = hasBriefContent(brief) ? {} : { content: "请提供任意产品资料，无需填满所有字段。" };
     setErrors(next);
     return Object.keys(next).length === 0;
   };
@@ -163,16 +158,18 @@ export function BriefForm() {
 
       {delivery.templates.length > 0 && <section className="brief-template-bar"><div><span>▤</span><div><strong>从已保存模板快速开始</strong><p>自动带入风格方向、盒型偏好与配色参考，所有字段仍可修改。</p></div></div><select value={delivery.activeTemplateId || ""} onChange={(event) => applyTemplate(event.target.value)}><option value="">选择项目模板</option>{delivery.templates.map((template) => <option value={template.id} key={template.id}>{template.name}</option>)}</select><a href="/templates">管理模板 →</a></section>}
 
+      {errors.content && <p role="alert">{errors.content}</p>}
       <form onSubmit={(event) => { event.preventDefault(); nextStep(); }} noValidate>
         <section className="form-card">
           <div className="section-title"><span>01</span><div><h2>基础信息</h2><p>定义本次包装项目的基本商业背景</p></div></div>
           <div className="form-grid">
-            <Field label="品牌名称" required count={`${brief.brand.name.length}/50`} error={errors["brand.name"]} source={sourceOf("brand.name")}><input maxLength={50} value={brief.brand.name} onChange={(e) => brand("name", e.target.value)} placeholder="请输入品牌名称" /></Field>
-            <Field label="产品名称" required count={`${brief.product.name.length}/50`} error={errors["product.name"]} source={sourceOf("product.name")}><input maxLength={50} value={brief.product.name} onChange={(e) => product("name", e.target.value)} placeholder="请输入产品名称" /></Field>
-            <Field label="所属行业" required error={errors["product.industry"]} source={sourceOf("product.industry")}><CreatableSelect value={brief.product.industry} onChange={(v) => product("industry", v)} options={includeCurrent(industries, brief.product.industry)} /></Field>
-            <Field label="产品品类" required error={errors["product.category"]} source={sourceOf("product.category")}><CreatableSelect value={brief.product.category} onChange={(v) => product("category", v)} options={includeCurrent(categories, brief.product.category)} /></Field>
-            <Field label="目标市场" required error={errors["product.targetMarket"]} source={sourceOf("product.targetMarket")}><CreatableSelect value={brief.product.targetMarket} onChange={(v) => product("targetMarket", v)} options={includeCurrent(markets, brief.product.targetMarket)} /></Field>
-            <Field label="销售渠道" required error={errors["product.salesChannel"]} source={sourceOf("product.salesChannel")}><CreatableSelect value={brief.product.salesChannel} onChange={(v) => product("salesChannel", v)} options={includeCurrent(channels, brief.product.salesChannel)} /></Field>
+            <Field label="其他已提供的资料" wide source={sourceOf("additionalInfo")}><textarea rows={3} value={brief.additionalInfo || ""} onChange={e => update({ ...brief, additionalInfo: e.target.value }, "additionalInfo")} placeholder="任何补充资料都可填写，无需匹配固定字段" /></Field>
+            <Field label="品牌名称" count={`${brief.brand.name.length}/50`} error={errors["brand.name"]} source={sourceOf("brand.name")}><input maxLength={50} value={brief.brand.name} onChange={(e) => brand("name", e.target.value)} placeholder="请输入品牌名称" /></Field>
+            <Field label="产品名称" count={`${brief.product.name.length}/50`} error={errors["product.name"]} source={sourceOf("product.name")}><input maxLength={50} value={brief.product.name} onChange={(e) => product("name", e.target.value)} placeholder="请输入产品名称" /></Field>
+            <Field label="所属行业" error={errors["product.industry"]} source={sourceOf("product.industry")}><CreatableSelect value={brief.product.industry} onChange={(v) => product("industry", v)} options={includeCurrent(industries, brief.product.industry)} /></Field>
+            <Field label="产品品类" error={errors["product.category"]} source={sourceOf("product.category")}><CreatableSelect value={brief.product.category} onChange={(v) => product("category", v)} options={includeCurrent(categories, brief.product.category)} /></Field>
+            <Field label="目标市场" error={errors["product.targetMarket"]} source={sourceOf("product.targetMarket")}><CreatableSelect value={brief.product.targetMarket} onChange={(v) => product("targetMarket", v)} options={includeCurrent(markets, brief.product.targetMarket)} /></Field>
+            <Field label="销售渠道" error={errors["product.salesChannel"]} source={sourceOf("product.salesChannel")}><CreatableSelect value={brief.product.salesChannel} onChange={(v) => product("salesChannel", v)} options={includeCurrent(channels, brief.product.salesChannel)} /></Field>
             <Field label="价格带" count={`${brief.product.priceBand.length}/30`} source={sourceOf("product.priceBand")}><input maxLength={30} value={brief.product.priceBand} onChange={(e) => product("priceBand", e.target.value)} placeholder="如 ¥199–299" /></Field>
           </div>
         </section>
@@ -180,7 +177,7 @@ export function BriefForm() {
         <section className="form-card">
           <div className="section-title"><span>02</span><div><h2>目标消费者</h2><p>明确包装需要打动的核心人群</p></div></div>
           <div className="form-grid">
-            <Field label="年龄范围" required error={errors["consumer.ageRange"]} source={sourceOf("consumer.ageRange")}><CreatableSelect value={brief.consumer.ageRange} onChange={(v) => consumer("ageRange", v)} options={includeCurrent(ages, brief.consumer.ageRange)} /></Field>
+            <Field label="年龄范围" error={errors["consumer.ageRange"]} source={sourceOf("consumer.ageRange")}><CreatableSelect value={brief.consumer.ageRange} onChange={(v) => consumer("ageRange", v)} options={includeCurrent(ages, brief.consumer.ageRange)} /></Field>
             <div />
             <Field label="消费关键词" wide source={sourceOf("consumer.keywords")}><TagInput value={brief.consumer.keywords} onChange={(v) => consumer("keywords", v)} placeholder="如 保湿、焕亮、敏感肌可用" /></Field>
           </div>
@@ -189,7 +186,7 @@ export function BriefForm() {
         <section className="form-card">
           <div className="section-title"><span>03</span><div><h2>品牌市场定位</h2><p>把品牌策略转化为可感知的性格与表达</p></div></div>
           <div className="form-grid">
-            <Field label="品牌定位" required wide count={`${brief.brand.positioning.length}/100`} error={errors["brand.positioning"]} source={sourceOf("brand.positioning")}><textarea maxLength={100} rows={3} value={brief.brand.positioning} onChange={(e) => brand("positioning", e.target.value)} placeholder="如：专研天然植萃科技的高效护肤品牌" /></Field>
+            <Field label="品牌定位" wide count={`${brief.brand.positioning.length}/100`} error={errors["brand.positioning"]} source={sourceOf("brand.positioning")}><textarea maxLength={100} rows={3} value={brief.brand.positioning} onChange={(e) => brand("positioning", e.target.value)} placeholder="如：专研天然植萃科技的高效护肤品牌" /></Field>
             <Field label="品牌个性" wide source={sourceOf("brand.personality")}><TagInput value={brief.brand.personality} onChange={(v) => brand("personality", v)} placeholder="如 专业、温和、高效" /></Field>
             <Field label="品牌主张" count={`${brief.brand.slogan.length}/50`} source={sourceOf("brand.slogan")}><input maxLength={50} value={brief.brand.slogan} onChange={(e) => brand("slogan", e.target.value)} placeholder="一句话品牌主张" /></Field>
             <Field label="核心价值" count={`${brief.brand.coreValues.length}/100`} source={sourceOf("brand.coreValues")}><textarea maxLength={100} rows={2} value={brief.brand.coreValues} onChange={(e) => brand("coreValues", e.target.value)} placeholder="品牌坚持的核心价值" /></Field>
@@ -219,7 +216,7 @@ export function BriefForm() {
       {importOpen && <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setImportOpen(false); }}>
         <section className="import-modal" role="dialog" aria-modal="true" aria-labelledby="import-title">
           <div className="modal-head"><div><span className="eyebrow">DOCUMENT IMPORT</span><h2 id="import-title">从文档或图片填写 Design Brief</h2></div><button type="button" disabled={importing} onClick={() => setImportOpen(false)} aria-label="关闭">×</button></div>
-          <p>上传包装图、产品图、Word 或 PDF，系统会先提取原文信息，再用 AI 补全空字段。AI 补全的项会标成「AI 生成」，可直接改。</p>
+          <p>上传包装图、产品图、Word 或 PDF，有什么信息就提取什么，未提供的字段留空，可直接修改。</p>
           <input ref={fileInputRef} className="file-input-hidden" type="file" multiple accept=".docx,.doc,.pdf,.json,.png,.jpg,.jpeg,.webp,.gif,image/png,image/jpeg,image/webp,image/gif,application/pdf,application/json,application/vnd.openxmlformats-officedocument.wordprocessingml.document" onChange={event=>void importFiles(event.target.files)}/>
           <button className={`document-dropzone ${importing?"loading":""}`} type="button" disabled={importing} onClick={()=>fileInputRef.current?.click()} onDragOver={event=>event.preventDefault()} onDrop={event=>{event.preventDefault();void importFiles(event.dataTransfer.files);}}>
             <span>{importing?"◌":"↥"}</span><strong>{importing?"正在读取并分析…":"选择文件或拖拽到这里"}</strong><small>支持 JPG / PNG / WEBP、Word .docx、PDF、JSON · 图片最多 6 张 · 单文件最大 15MB</small>

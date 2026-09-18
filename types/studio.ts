@@ -31,6 +31,7 @@ export type StudioVersion = {
   createdAt: string;
 };
 export type DesignPlan = {
+  notes?: string;
   concept: string;
   referenceInsights: string;
   palette: { color: string; role: string }[];

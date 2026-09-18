@@ -63,11 +63,13 @@ export function listMissingFillableFields(brief: DesignBrief) {
 }
 
 export function sourcesFromExtractedBrief(brief: DesignBrief): BriefFieldSources {
-  return Object.fromEntries(
+  const sources: BriefFieldSources = Object.fromEntries(
     BRIEF_FORM_FIELDS
       .filter((path) => !isBriefFieldEmpty(readPath(brief, path)))
       .map((path) => [path, "document" as const]),
   );
+  if (brief.additionalInfo?.trim()) sources.additionalInfo = 'document';
+  return sources;
 }
 
 export function mergeAiFilledBrief(extracted: DesignBrief, generated: DesignBrief) {

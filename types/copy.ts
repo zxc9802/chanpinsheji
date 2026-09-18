@@ -3,6 +3,7 @@ import type { DesignBrief } from "./design-brief";
 export type CopyFieldKey = "main_slogan" | "sub_slogan" | "efficacy_desc" | "ingredient_desc" | "usage_desc" | "back_panel";
 
 export interface CopyGenerationParams {
+  allowPartial?: boolean;
   brief: DesignBrief;
   finalLogo?: { id: string; styleTags?: string[] };
   toneHint?: string;

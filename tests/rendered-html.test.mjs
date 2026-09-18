@@ -381,6 +381,6 @@ test("step one document import always uses OpenLux gpt-5.6-luna",async()=>{
   assert.match(form,/importBriefFromImages/);
   assert.match(form,/AI 生成/);
   assert.match(form,/importParsedBrief/);
-  assert.match(prompt,/briefFillSystemPrompt/);
-  assert.match(route,/fillMissingBriefFields/);
+  assert.match(prompt,/任何字段都可省略/);
+  assert.doesNotMatch(route,/fillMissingBriefFields/);
 });

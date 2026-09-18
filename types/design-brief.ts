@@ -4,6 +4,7 @@
  */
 export interface DesignBrief {
   projectId: string;
+  additionalInfo?: string;
   brand: {
     name: string;
     positioning: string;

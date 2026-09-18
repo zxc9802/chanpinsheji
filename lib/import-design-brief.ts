@@ -1,13 +1,14 @@
-import { emptyDesignBrief, type DesignBrief } from "@/types/design-brief";
+import { emptyDesignBrief, type DesignBrief } from "../types/design-brief.ts";
+import { describeContent } from "./design-content.ts";
 
 export class DesignBriefImportError extends Error {}
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
 
-const text = (value: unknown) => (typeof value === "string" ? value : "");
+const text = describeContent;
 const texts = (value: unknown) =>
-  Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
+  (Array.isArray(value) ? value : [value]).map(text).filter(Boolean);
 
 /** 接收 JSON 字符串或对象，校验结构并补齐允许缺省的字段。 */
 export function importDesignBrief(json: string | unknown): DesignBrief {
@@ -21,14 +22,23 @@ export function importDesignBrief(json: string | unknown): DesignBrief {
   }
   if (!isRecord(input)) throw new DesignBriefImportError("Design Brief 必须是一个 JSON 对象。");
 
-  const brand = isRecord(input.brand) ? input.brand : null;
-  const product = isRecord(input.product) ? input.product : null;
-  const consumer = isRecord(input.consumer) ? input.consumer : null;
-  if (!brand || !product || !consumer) {
-    throw new DesignBriefImportError("缺少 brand、product 或 consumer 核心数据块。");
-  }
+  const brand = isRecord(input.brand) ? input.brand : {};
+  const product = isRecord(input.product) ? input.product : {};
+  const consumer = isRecord(input.consumer) ? input.consumer : {};
 
   const base = emptyDesignBrief();
+  const extra = Object.entries(input).flatMap(([key, value]) => {
+    if (key === 'additionalInfo') return [];
+    if (!(key in base)) return describeContent(value) ? [`${key}：${describeContent(value)}`] : [];
+    const known = base[key as keyof DesignBrief];
+    if (isRecord(value) && isRecord(known)) {
+      const keys = key === 'hardConstraints' ? ['maxPackageCost', 'dimensions'] : Object.keys(known);
+      return Object.entries(value).flatMap(([field, content]) => !keys.includes(field) && describeContent(content) ? [`${key}.${field}：${describeContent(content)}`] : []);
+    }
+    // Retain an unstructured section instead of losing it during normalization.
+    return isRecord(known) && describeContent(value) ? [`${key}：${describeContent(value)}`] : [];
+  });
+  const additionalInfo = [describeContent(input.additionalInfo), ...extra].filter(Boolean).join('\n');
   const allowedTypes = new Set(["pain_point", "opportunity", "need"]);
   const insights = Array.isArray(input.insights)
     ? input.insights.flatMap((item) => {
@@ -52,6 +62,7 @@ export function importDesignBrief(json: string | unknown): DesignBrief {
 
   return {
     projectId: text(input.projectId) || `project-${Date.now()}`,
+    ...(additionalInfo ? { additionalInfo } : {}),
     brand: {
       name: text(brand.name), positioning: text(brand.positioning),
       personality: texts(brand.personality), slogan: text(brand.slogan), coreValues: text(brand.coreValues),

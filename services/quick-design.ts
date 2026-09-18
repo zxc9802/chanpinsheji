@@ -1,3 +1,4 @@
+import { hasBriefContent } from '../lib/design-content.ts';
 import type { DesignBrief } from '../types/design-brief';
 import type { QuickBundle, StudioState, AssetKind, DesignPlan, DesignReview, StudioReview } from '../types/studio';
 import type { BriefFieldSources } from '../lib/brief-field-sources';
@@ -23,7 +24,7 @@ export async function designInputKey(brief: DesignBrief, state: StudioState) {
   return Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', bytes)), b => b.toString(16).padStart(2, '0')).join('');
 }
 export async function generateQuickDesign(brief: DesignBrief, state: StudioState, deps: QuickDesignDependencies): Promise<QuickBundle> {
-  if (!brief.brand.name.trim() || !brief.product.name.trim()) throw new Error('请补充品牌名和产品名');
+  if (!hasBriefContent(brief) && !state.styleHint.trim() && !state.reference) throw new Error('请提供任意产品资料、参考图或设计想法');
   const inputKey = await designInputKey(brief, state);
   if (state.direction && state.direction.inputKey !== inputKey) state = { ...state, draft: state.stage === 'sync' ? state.draft : {}, direction: undefined, reviews: {}, pending: undefined, creativePending: undefined };
   const draft = { ...state.draft };
@@ -43,7 +44,7 @@ export async function generateQuickDesign(brief: DesignBrief, state: StudioState
     checkpoint('plan', { creativePending: undefined });
   }
   const plan = direction.plan;
-  const facts = `品牌：${brief.brand.name}。产品：${brief.product.name}。资料：${JSON.stringify(brief)}。设计方向：${state.styleHint || brief.styleKeywords.join('、') || '根据产品定位自主设计'}。整套视觉方案（Logo、内包装、外包装共用）：${JSON.stringify(plan)}。方案中的材质、结构和工艺是设计建议，不能覆盖文档中的事实和约束。遵守文档中提供的容量、尺寸和成本约束；未提供的结构尺寸、材质和工艺可作设计建议，不能作为已确认规格印在包装上。严禁编造净含量、功效、认证、配方、联系方式、二维码或条码。品牌名、产品名必须准确。`;
+  const facts = `品牌：${brief.brand.name}。产品：${brief.product.name}。资料：${JSON.stringify(brief)}。设计方向：${state.styleHint || brief.styleKeywords.join('、') || '根据产品定位自主设计'}。整套视觉方案（Logo、内包装、外包装共用）：${JSON.stringify(plan)}。方案中的材质、结构和工艺是设计建议，不能覆盖文档中的事实和约束。遵守文档中提供的容量、尺寸和成本约束；未提供的结构尺寸、材质和工艺可作设计建议，不能作为已确认规格印在包装上。严禁编造净含量、功效、认证、配方、联系方式、二维码或条码。只呈现已提供的品牌名、产品名与文案；未提供的不写，不使用占位字，不为了填满版面补造内容。视觉方案没有指定的部分，可沿用已有设计语言进行原创设计。`;
   const viewLayout = '三视图画布严格划分为三个等宽竖列，每列占画面宽度的三分之一：正面完整居中放在最左列，侧面完整居中放在中列，背面完整居中放在最右列。各视图与所在列边缘保留白色间距，不得跨列，不画分隔线。';
   const image = async (stage: AssetKind, prompt: string, refs: string[]) => {
     let review = reviews[stage];
@@ -100,15 +101,15 @@ export async function generateQuickDesign(brief: DesignBrief, state: StudioState
   };
   if (!draft.copy) { checkpoint('copy'); draft.copy = await deps.copy(brief, `${state.styleHint}。视觉方向：${plan.concept}；信息层级：${plan.typography}。仅使用提供资料中的事实，缺失的功效、规格、配方不补造。`); checkpoint('copy'); }
   if (!draft.logo) {
-    const url = await image('logo', `设计单一完整的品牌 Logo，品牌字标为“${brief.brand.name}”，可以搭配一个简洁图形，居中平面白底，无样机，无多方案拼接。${styleReference ? '参考图仅提供配色、材质氛围和视觉风格，不得照搬参考图中的商标或文字。' : ''}${facts}输出背景必须为纯白色 #FFFFFF，不得使用场景、道具、渐变或有色背景。`, styleReference ? [styleReference] : []);
+    const url = await image('logo', `设计单一完整的品牌 Logo，${brief.brand.name.trim() ? `品牌字标为“${brief.brand.name}”，可以搭配一个简洁图形` : "品牌名未提供，设计纯图形标志，不编造名称或字标"}，居中平面白底，无样机，无多方案拼接。${styleReference ? '参考图仅提供配色、材质氛围和视觉风格，不得照搬参考图中的商标或文字。' : ''}${facts}输出背景必须为纯白色 #FFFFFF，不得使用场景、道具、渐变或有色背景。`, styleReference ? [styleReference] : []);
     draft.logo = { id: `logo-ai-studio-${crypto.randomUUID()}`, imageUrl: url, logoType: 'combination', styleTags: brief.styleKeywords, matchedSellingPoints: [], round: 1 }; checkpoint('logo');
   }
-  const copyText = draft.copy.fields.map(f => `${f.label}：${f.content}`).join('\n');
+  const copyText = draft.copy.fields.filter(f => f.content.trim()).map(f => `${f.label}：${f.content}`).join('\n');
   if (!draft.product) {
     const designDirection = structureReference
       ? '第一张参考图是必须保持结构、器型比例、瓶盖和开口方式的产品，重新设计其视觉。第二张是必须准确使用的品牌 Logo。'
       : `从零原创设计完整产品的瓶身形状、比例、瓶肩、瓶盖或泵头、开口与取用方式、材质、表面工艺和标签。根据产品品类、容量、定位与使用场景自主决定合理结构。${styleReference ? '第一张图仅作配色、材质氛围和视觉风格参考，不锁定其瓶型、轮廓或开口，不得照搬其中的商标或文字。第二张是必须准确使用的品牌 Logo。' : '唯一参考图是必须准确使用的品牌 Logo，仅供品牌标识使用，不是瓶身结构参考。'}`;
-    const prompt = `设计产品内包装（瓶身、瓶盖及标签）。${designDirection}按实际版面合理安排以下文案，品牌和产品名清晰完整：\n${copyText}\n${facts}\n输出一张纯白色 #FFFFFF 背景的三视图：从左到右为同一产品的完整正面、完整侧面、完整背面，三者同尺度、同基线、不重叠、不裁切，留足间距。三个视图的瓶型、瓶盖、材质和品牌标志完全一致，侧面是准确90度、背面是准确180度视角。只有这三个正交视图，不要场景主图、透视样机、额外瓶子、外包装盒、道具、色块背景、渐变、视角标注或说明卡。`;
+    const prompt = `设计产品内包装（瓶身、瓶盖及标签）。${designDirection}按实际版面合理安排以下文案，已提供的品牌和产品名清晰完整，未提供的不写：\n${copyText}\n${facts}\n输出一张纯白色 #FFFFFF 背景的三视图：从左到右为同一产品的完整正面、完整侧面、完整背面，三者同尺度、同基线、不重叠、不裁切，留足间距。三个视图的瓶型、瓶盖、材质和品牌标志完全一致，侧面是准确90度、背面是准确180度视角。只有这三个正交视图，不要场景主图、透视样机、额外瓶子、外包装盒、道具、色块背景、渐变、视角标注或说明卡。`;
     const reference = structureReference || styleReference;
     const url = await image('product', `${prompt}\n${viewLayout}`, [...(reference ? [reference] : []), draft.logo.imageUrl]);
     // Use the original design as its structure preview in the professional workflow.
@@ -118,7 +119,7 @@ export async function generateQuickDesign(brief: DesignBrief, state: StudioState
   if (!draft.packaging) {
     const prompt = `为产品设计配套外包装盒。第一张参考是已选产品设计，第二张是品牌Logo。保持同一套品牌配色、字体与图形，合理安排以下实际文案：\n${copyText}\n${facts}\n输出一张纯白色 #FFFFFF 背景的外包装三视图：从左到右为同一盒子的完整正面、完整侧面、完整背面，三者同尺度、同基线、不重叠、不裁切，留足间距。三个视图结构、比例和品牌设计一致，侧面是准确90度、背面是准确180度视角。只有这三个正交视图，不输出瓶身、场景主图、透视样机、额外盒子、道具、色块背景、渐变、视角标注或说明卡。`;
     const url = await image('packaging', `${prompt}\n${viewLayout}`, [draft.product.imageUrl, draft.logo.imageUrl]);
-    draft.packaging = { id: `packaging-ai-studio-${crypto.randomUUID()}`, boxTypeId: 'ai-generated-package', previewImageUrl: url, faces: [{ face: 'front', elements: [{ type: 'logo', content: brief.brand.name, position: '顶部' }, { type: 'product_name', content: brief.product.name, position: '中央' }] }, { face: 'back', elements: draft.copy.fields.map(f => ({ type: 'decoration' as const, content: f.content, position: f.label })) }], palette: [], costEstimate: '生产前核算', round: 1, renderMode: 'direct_ai_preview', directionName: plan.concept, generationPrompt: `${prompt}\n${viewLayout}`, createdAt: new Date().toISOString() }; checkpoint('packaging');
+    draft.packaging = { id: `packaging-ai-studio-${crypto.randomUUID()}`, boxTypeId: 'ai-generated-package', previewImageUrl: url, faces: [{ face: 'front', elements: [{ type: 'logo' as const, content: brief.brand.name, position: '顶部' }, { type: 'product_name' as const, content: brief.product.name, position: '中央' }].filter(e => e.content.trim()) }, { face: 'back', elements: draft.copy.fields.filter(f => f.content.trim()).map(f => ({ type: 'decoration' as const, content: f.content, position: f.label })) }], palette: [], costEstimate: '生产前核算', round: 1, renderMode: 'direct_ai_preview', directionName: plan.concept, generationPrompt: `${prompt}\n${viewLayout}`, createdAt: new Date().toISOString() }; checkpoint('packaging');
   }
   checkpoint('completed');
   return draft as QuickBundle;

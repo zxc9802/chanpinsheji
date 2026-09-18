@@ -126,9 +126,9 @@ test('leaving during planning stops before copy and paid image generation', asyn
   await assert.rejects(generateQuickDesign(f.brief,f.state,f.deps),/离开/);
   assert.equal(f.calls.length,0);
 });
-test('request and response validation rejects remote images, missing fields and ungrounded comparison choices', () => {
+test('request and response validation rejects remote images and ungrounded comparison choices while accepting optional plan fields', () => {
   const f=fixture();assert.deepEqual(parseDesignPlan(plan),plan);
-  assert.throws(()=>parseDesignPlan({...plan,typography:''}),/字体/);
+  assert.equal(parseDesignPlan({...plan,typography:''}).typography,'');
   assert.throws(()=>parseDesignReview(good,true),/比较/);
   assert.throws(()=>parseDesignReview({...bad,issues:[{severity:'major',problem:'难看'}]}),/位置/);
   const request={action:'review',brief:f.brief,styleHint:'',kind:'logo',plan,original:'https://internal.test/image',references:[]};

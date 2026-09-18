@@ -129,9 +129,14 @@ test('document-only resume keeps its paid job and sync can preserve an adopted o
   assert.deepEqual(syncCalls[0].refs,['adopted-bottle','logo']);assert.match(syncCalls[0].prompt,/必须保持结构/);
   assert.deepEqual(syncCalls[1].refs,['synced-product','logo']);assert.equal(synced.container.source,'ai');
 });
-test('missing product identity still blocks generation before any AI calls', async () => {
-  const {brief,state}=fixture();delete state.reference;brief.product.name=' ';
-  await assert.rejects(generateQuickDesign(brief,state,{copy:async()=>{throw Error('unexpected call');},image:async()=>{throw Error('unexpected call');},checkpoint:()=>{},active:()=>true}),/请补充品牌名和产品名/);
+test('missing names and factual copy do not block generation or create placeholder labels', async () => {
+  const {brief,state,copy}=fixture();delete state.reference;brief.product.name='';brief.brand.name='';
+  brief.additionalInfo='瓶身使用细磨砂材质';const prompts=[];
+  const result=await generateQuickDesign(brief,state,{copy:async()=>({...copy,fields:[]}),image:async(kind,prompt)=>{prompts.push(prompt);return kind},checkpoint:()=>{},active:()=>true});
+  assert.equal(prompts.length,3);assert.match(prompts[0],/品牌名未提供，设计纯图形标志/);
+  assert.ok(prompts.every(prompt=>prompt.includes('细磨砂')));
+  assert.deepEqual(result.packaging.faces[0].elements,[]);
+  assert.deepEqual(result.packaging.faces[1].elements,[]);
 });
 test('resume uses saved job ID and never regenerates finished logo or copy', async () => {
   const {brief,state,copy}=fixture();state.draft={copy,logo:{id:'logo-ai-old',imageUrl:'saved-logo',styleTags:[],matchedSellingPoints:[],logoType:'wordmark',round:1}};state.pending={stage:'product',jobId:'existing-paid-job'};
