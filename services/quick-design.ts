@@ -44,6 +44,7 @@ export async function generateQuickDesign(brief: DesignBrief, state: StudioState
   }
   const plan = direction.plan;
   const facts = `品牌：${brief.brand.name}。产品：${brief.product.name}。资料：${JSON.stringify(brief)}。设计方向：${state.styleHint || brief.styleKeywords.join('、') || '根据产品定位自主设计'}。整套视觉方案（Logo、内包装、外包装共用）：${JSON.stringify(plan)}。方案中的材质、结构和工艺是设计建议，不能覆盖文档中的事实和约束。遵守文档中提供的容量、尺寸和成本约束；未提供的结构尺寸、材质和工艺可作设计建议，不能作为已确认规格印在包装上。严禁编造净含量、功效、认证、配方、联系方式、二维码或条码。品牌名、产品名必须准确。`;
+  const viewLayout = '三视图画布严格划分为三个等宽竖列，每列占画面宽度的三分之一：正面完整居中放在最左列，侧面完整居中放在中列，背面完整居中放在最右列。各视图与所在列边缘保留白色间距，不得跨列，不画分隔线。';
   const image = async (stage: AssetKind, prompt: string, refs: string[]) => {
     let review = reviews[stage];
     if (!review) {
@@ -93,14 +94,14 @@ export async function generateQuickDesign(brief: DesignBrief, state: StudioState
     return review.selected === 'revised' && review.revised ? review.revised : review.original;
   };
   if (!draft.container) draft.container = {
-    id: `${structureReference ? 'uploaded' : 'ai'}-studio-${Date.now()}`, name: structureReference ? '参考图产品器型' : 'AI 原创产品器型', sketchUrl: structureReference || '', referenceImageUrl: structureReference,
+    id: `${structureReference ? 'uploaded' : 'ai'}-studio-${crypto.randomUUID()}`, name: structureReference ? '参考图产品器型' : 'AI 原创产品器型', sketchUrl: structureReference || '', referenceImageUrl: structureReference,
     suitableCategories: [brief.product.category], dispensingType: structureReference ? '保持参考图结构' : '根据产品取用场景设计', volumeOptions: [brief.hardConstraints.dimensions || '规格待确认'], costLevel: 2,
     materialOptions: [], viewMode: 'three_view', source: structureReference ? 'upload' : 'ai', kind: 'custom', isCustom: true, engineeringVerificationRequired: true,
   };
   if (!draft.copy) { checkpoint('copy'); draft.copy = await deps.copy(brief, `${state.styleHint}。视觉方向：${plan.concept}；信息层级：${plan.typography}。仅使用提供资料中的事实，缺失的功效、规格、配方不补造。`); checkpoint('copy'); }
   if (!draft.logo) {
     const url = await image('logo', `设计单一完整的品牌 Logo，品牌字标为“${brief.brand.name}”，可以搭配一个简洁图形，居中平面白底，无样机，无多方案拼接。${styleReference ? '参考图仅提供配色、材质氛围和视觉风格，不得照搬参考图中的商标或文字。' : ''}${facts}输出背景必须为纯白色 #FFFFFF，不得使用场景、道具、渐变或有色背景。`, styleReference ? [styleReference] : []);
-    draft.logo = { id: `logo-ai-studio-${Date.now()}`, imageUrl: url, logoType: 'combination', styleTags: brief.styleKeywords, matchedSellingPoints: [], round: 1 }; checkpoint('logo');
+    draft.logo = { id: `logo-ai-studio-${crypto.randomUUID()}`, imageUrl: url, logoType: 'combination', styleTags: brief.styleKeywords, matchedSellingPoints: [], round: 1 }; checkpoint('logo');
   }
   const copyText = draft.copy.fields.map(f => `${f.label}：${f.content}`).join('\n');
   if (!draft.product) {
@@ -109,15 +110,15 @@ export async function generateQuickDesign(brief: DesignBrief, state: StudioState
       : `从零原创设计完整产品的瓶身形状、比例、瓶肩、瓶盖或泵头、开口与取用方式、材质、表面工艺和标签。根据产品品类、容量、定位与使用场景自主决定合理结构。${styleReference ? '第一张图仅作配色、材质氛围和视觉风格参考，不锁定其瓶型、轮廓或开口，不得照搬其中的商标或文字。第二张是必须准确使用的品牌 Logo。' : '唯一参考图是必须准确使用的品牌 Logo，仅供品牌标识使用，不是瓶身结构参考。'}`;
     const prompt = `设计产品内包装（瓶身、瓶盖及标签）。${designDirection}按实际版面合理安排以下文案，品牌和产品名清晰完整：\n${copyText}\n${facts}\n输出一张纯白色 #FFFFFF 背景的三视图：从左到右为同一产品的完整正面、完整侧面、完整背面，三者同尺度、同基线、不重叠、不裁切，留足间距。三个视图的瓶型、瓶盖、材质和品牌标志完全一致，侧面是准确90度、背面是准确180度视角。只有这三个正交视图，不要场景主图、透视样机、额外瓶子、外包装盒、道具、色块背景、渐变、视角标注或说明卡。`;
     const reference = structureReference || styleReference;
-    const url = await image('product', prompt, [...(reference ? [reference] : []), draft.logo.imageUrl]);
+    const url = await image('product', `${prompt}\n${viewLayout}`, [...(reference ? [reference] : []), draft.logo.imageUrl]);
     // Use the original design as its structure preview in the professional workflow.
     draft.container = { ...draft.container, viewMode: 'three_view', ...(!structureReference ? { sketchUrl: url } : {}) };
-    draft.product = { id: `product-ai-studio-${Date.now()}`, imageUrl: url, styleDirection: state.styleHint || '品牌统一设计', containerType: { ...draft.container, volume: draft.container.volumeOptions[0] }, cmf: { colorScheme: [], material: '见设计图，生产前确认', finish: '见设计图，生产前确认' }, matchedSellingPoints: brief.product.coreSellingPoints.map(p => p.point), avoidedPainPoints: [], viewMode: 'three_view', copyApplied: draft.copy.fields, round: 1, renderMode: 'direct_ai', generationStatus: 'completed', generationPrompt: prompt, createdAt: new Date().toISOString() }; checkpoint('product');
+    draft.product = { id: `product-ai-studio-${crypto.randomUUID()}`, imageUrl: url, styleDirection: plan.concept, containerType: { ...draft.container, volume: draft.container.volumeOptions[0] }, cmf: { colorScheme: [], material: '见设计图，生产前确认', finish: '见设计图，生产前确认' }, matchedSellingPoints: brief.product.coreSellingPoints.map(p => p.point), avoidedPainPoints: [], viewMode: 'three_view', copyApplied: draft.copy.fields, round: 1, renderMode: 'direct_ai', generationStatus: 'completed', generationPrompt: `${prompt}\n${viewLayout}`, createdAt: new Date().toISOString() }; checkpoint('product');
   }
   if (!draft.packaging) {
     const prompt = `为产品设计配套外包装盒。第一张参考是已选产品设计，第二张是品牌Logo。保持同一套品牌配色、字体与图形，合理安排以下实际文案：\n${copyText}\n${facts}\n输出一张纯白色 #FFFFFF 背景的外包装三视图：从左到右为同一盒子的完整正面、完整侧面、完整背面，三者同尺度、同基线、不重叠、不裁切，留足间距。三个视图结构、比例和品牌设计一致，侧面是准确90度、背面是准确180度视角。只有这三个正交视图，不输出瓶身、场景主图、透视样机、额外盒子、道具、色块背景、渐变、视角标注或说明卡。`;
-    const url = await image('packaging', prompt, [draft.product.imageUrl, draft.logo.imageUrl]);
-    draft.packaging = { id: `packaging-ai-studio-${Date.now()}`, boxTypeId: 'ai-generated-package', previewImageUrl: url, faces: [{ face: 'front', elements: [{ type: 'logo', content: brief.brand.name, position: '顶部' }, { type: 'product_name', content: brief.product.name, position: '中央' }] }, { face: 'back', elements: draft.copy.fields.map(f => ({ type: 'decoration' as const, content: f.content, position: f.label })) }], palette: [], costEstimate: '生产前核算', round: 1, renderMode: 'direct_ai_preview', directionName: state.styleHint || '配套包装', generationPrompt: prompt, createdAt: new Date().toISOString() }; checkpoint('packaging');
+    const url = await image('packaging', `${prompt}\n${viewLayout}`, [draft.product.imageUrl, draft.logo.imageUrl]);
+    draft.packaging = { id: `packaging-ai-studio-${crypto.randomUUID()}`, boxTypeId: 'ai-generated-package', previewImageUrl: url, faces: [{ face: 'front', elements: [{ type: 'logo', content: brief.brand.name, position: '顶部' }, { type: 'product_name', content: brief.product.name, position: '中央' }] }, { face: 'back', elements: draft.copy.fields.map(f => ({ type: 'decoration' as const, content: f.content, position: f.label })) }], palette: [], costEstimate: '生产前核算', round: 1, renderMode: 'direct_ai_preview', directionName: plan.concept, generationPrompt: `${prompt}\n${viewLayout}`, createdAt: new Date().toISOString() }; checkpoint('packaging');
   }
   checkpoint('completed');
   return draft as QuickBundle;

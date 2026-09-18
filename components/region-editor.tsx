@@ -10,6 +10,7 @@ export function RegionEditor(props: {
   imageUrl: string; brandName: string; productName: string; regions: DesignRegion[];
   onRegions: (regions: DesignRegion[]) => void; onAdopt: (url: string, instruction: string) => void;
   autoRecognize?: boolean;
+  onBusyChange?: (busy: boolean) => void;
   assetKind?: AssetKind;
   pending?: PendingEdit; onPending: (pending?: PendingEdit) => void;
 }) {
@@ -21,6 +22,7 @@ export function RegionEditor(props: {
   const referenceDragDepth = useRef(0);
   const [busy, setBusy] = useState(''), [error, setError] = useState(''), [preview, setPreview] = useState(''), [before, setBefore] = useState(false);
   const [segmentedMask, setSegmentedMask] = useState<string>(), [overlay, setOverlay] = useState('');
+  useEffect(() => { props.onBusyChange?.(!!busy); return () => props.onBusyChange?.(false); }, [busy, props.onBusyChange]);
   const [dimensions, setDimensions] = useState({ width: 1, height: 1 });
   const canvasRef = useRef<HTMLDivElement>(null);
   const [canvasSize, setCanvasSize] = useState({ width: 600, height: 600 });

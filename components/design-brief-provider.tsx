@@ -17,6 +17,7 @@ import { emptyDeliveryState, type DeliveryState, type ExportRecord, type Project
 import { loadProjectIndex, loadProjectState, requestPersistentProjectStorage, saveProjectIndex, saveProjectState, type StoredProjectSummary } from "@/lib/project-storage";
 
 import { emptyStudioState, type StudioState, type QuickBundle, type AssetKind } from "@/types/studio";
+import { saveStudioConcept } from '@/services/studio-concepts';
 
 const LEGACY_STORAGE_KEY = "packaging-agent:project";
 const LEGACY_LOGO_TYPES:LogoType[]=["wordmark","lettermark","pictorial","abstract","combination","emblem"];
@@ -474,7 +475,7 @@ export function DesignBriefProvider({ children }: { children: React.ReactNode })
   }, []);
 
   const updateStudio = useCallback((projectId: string, updater: (studio: StudioState) => StudioState) => {
-    setState(old => old.brief.projectId === projectId ? { ...old, studio: updater(old.studio) } : old);
+    setState(old => old.brief.projectId === projectId ? { ...old, studio: saveStudioConcept(updater(old.studio)) } : old);
   }, []);
   const commitStudioBundle = useCallback((projectId: string, bundle: QuickBundle) => {
     setState(old => {
@@ -484,7 +485,7 @@ export function DesignBriefProvider({ children }: { children: React.ReactNode })
       const copyAsset: BrandCopyAsset = { type: "copy", id: `${projectId}:copy`, brandName: old.brief.brand.name, projectId, copyPackage: bundle.copy, finalizedAt: now };
       const versions = (["logo", "product", "packaging"] as const).map(kind => ({ id: crypto.randomUUID(), kind, imageUrl: kind === "packaging" ? bundle.packaging.previewImageUrl : bundle[kind].imageUrl, instruction: "一键生成", createdAt: now })).filter(v => !old.studio.versions.some(existing => existing.kind === v.kind && existing.imageUrl === v.imageUrl));
       return { ...old,
-        studio: { ...old.studio, draft: bundle, stage: "completed", pending: undefined, creativePending: undefined, error: undefined, versions: [...old.studio.versions, ...versions] },
+        studio: saveStudioConcept({ ...old.studio, draft: bundle, stage: "completed", pending: undefined, creativePending: undefined, error: undefined, versions: [...old.studio.versions, ...versions] }),
         logoProject: { ...old.logoProject, candidates: [...old.logoProject.candidates.filter(c => c.id !== bundle.logo.id), bundle.logo], finalLogoId: bundle.logo.id },
         copyProject: { ...old.copyProject, packages: [...old.copyProject.packages.filter(c => c.id !== bundle.copy.id), bundle.copy], finalPackage: bundle.copy },
         productDesign: { ...old.productDesign, selectedContainerTypeId: bundle.container.id, selectedVolume: bundle.container.volumeOptions[0], customContainers: [...old.productDesign.customContainers.filter(c => c.id !== bundle.container.id), bundle.container], structureConfirmed: true, candidates: [...old.productDesign.candidates.filter(c => c.id !== bundle.product.id), bundle.product], finalDesignId: bundle.product.id, finalWarnings: ["一键方案待质检确认"] },
@@ -522,7 +523,7 @@ export function DesignBriefProvider({ children }: { children: React.ReactNode })
         next.packagingProject = { ...old.packagingProject, candidates: [...old.packagingProject.candidates, candidate], finalDesign: { ...base, candidate, finalizedAt: now } };
         next.studio.draft = { ...old.studio.draft, packaging: candidate };
       }
-      return next;
+      return { ...next, studio: saveStudioConcept(next.studio) };
     });
   }, []);
 

@@ -55,6 +55,8 @@ export type StudioReview = {
 };
 export type CreativeStep = 'plan' | `review:${AssetKind}` | `compare:${AssetKind}`;
 export type StudioState = {
+  concepts?: StudioConcept[];
+  activeConceptId?: string;
   // References saved before modes existed were always used to preserve structure.
   reference?: { name: string; dataUrl: string; mode?: "style" | "structure" };
   documentName?: string;
@@ -70,4 +72,6 @@ export type StudioState = {
   regions: Record<string, DesignRegion[]>;
   versions: StudioVersion[];
 };
+export type StudioConceptState = Pick<StudioState, 'draft' | 'stage' | 'error' | 'pending' | 'direction' | 'creativePending' | 'reviews' | 'edit' | 'regions' | 'versions'>;
+export type StudioConcept = { id: string; name: string; designHint?: string; state: StudioConceptState };
 export const emptyStudioState = (): StudioState => ({ styleHint: "", draft: {}, stage: "idle", regions: {}, versions: [] });

@@ -45,7 +45,7 @@ export function buildRegionEditPrompt(args: { region?: DesignRegion; instruction
     `品牌：${args.brandName}；产品：${args.productName}。除非本次明确替换，否则品牌名、规格、成分、功效事实必须保持原样。不能编造。`,
     direction,
     args.hasReference ? "第二张图仅是用户上传的修改参考。第一张图才是待编辑原图，蒙版只作用于第一张图。吸收参考图中与修改要求相关的配色、图案、材质或造型，不复制无关文字、水印或背景，不把两张图拼贴。" : "",
-    !region ? `输出背景必须为纯白色 #FFFFFF，无场景、道具或渐变。${args.assetKind === 'product' || args.assetKind === 'packaging' ? '保持同一设计的完整正面、完整侧面、完整背面三视图，三者同尺度、同基线并排，不重叠、不裁切。' : ''}` : "",
+    !region ? `输出背景必须为纯白色 #FFFFFF，无场景、道具或渐变。${args.assetKind === 'product' || args.assetKind === 'packaging' ? '保持同一设计的完整正面、完整侧面、完整背面三视图，三者同尺度、同基线并排，不重叠、不裁切。画布分为三个等宽竖列，正面、侧面、背面依次完整居中放在左、中、右列，每列占画面宽度的三分之一，保留白边、不跨列、不画分隔线。' : ''}` : "",
     "第一张图是待编辑原图，保持透视、光照、材质和选区边缘衔接自然。不输出选框、蒙版、标注或说明。",
   ].filter(Boolean).join("\n");
 }

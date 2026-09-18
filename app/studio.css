@@ -14,3 +14,19 @@
 .studio-replace-document:focus-within{outline:3px solid #a7c5ac}
 .studio-replace-document:has(input:disabled){opacity:.45;cursor:wait}
 @media(max-width:600px){.studio-document .studio-progress{min-height:190px;padding:18px}.studio-document .studio-progress ol{gap:12px 18px}}
+.studio-concept-gallery{border:1px solid var(--studio-line);border-radius:12px;padding:24px;background:#f5f7f1}
+.studio-gallery-heading,.studio-concept-caption,.studio-concept-detail-heading,.studio-gallery-more{display:flex;align-items:center;justify-content:space-between;gap:16px}
+.studio-gallery-heading{margin-bottom:22px}.studio-gallery-heading>span,.studio-gallery-more>span{font-size:12px;color:#738277}
+.studio-concept-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:20px}
+.quick-studio .studio-concept-card{display:flex;flex-direction:column;min-width:0;padding:14px;text-align:left;background:#fff;border-radius:10px;overflow:hidden}
+.quick-studio .studio-concept-card:disabled{opacity:1;color:#738277}.studio-concept-card:disabled .studio-concept-image{opacity:.65}
+.studio-concept-image{height:380px;width:100%;display:flex;justify-content:center;align-items:center;background:#fff}
+.studio-front-preview{position:relative;overflow:hidden;height:100%;max-width:100%;background:#fff}
+.studio-front-preview img{position:absolute;left:0;top:0;width:300%;height:100%;max-width:none;display:block}
+.studio-front-preview.is-logo{height:auto;width:100%}.studio-front-preview.is-logo img{width:100%;object-fit:contain}
+.studio-concept-caption{width:100%;border-top:1px solid #edf0e9;padding-top:14px;margin-top:14px}.studio-concept-caption>span{font-size:11px;color:#688775}
+.studio-concept-card>p{font-size:12px;line-height:1.7;color:#738277;margin:10px 0 0}.studio-concept-placeholder{font-size:13px;color:#98a594}
+.studio-gallery-more{margin-top:24px}.studio-concept-detail-heading{justify-content:flex-start;margin:20px 0}.studio-concept-detail-heading strong{font-size:14px}
+.studio-concept-progress{margin-top:16px;flex-wrap:wrap;color:#83947e;font-size:12px}.studio-concept-progress .current{color:#145442;font-weight:600}
+@media(max-width:900px){.studio-concept-gallery{padding:16px}.studio-concept-grid{gap:10px}.studio-concept-image{height:280px}.quick-studio .studio-concept-card{padding:10px}.studio-concept-caption{align-items:flex-start;flex-direction:column;gap:6px}}
+@media(max-width:600px){.studio-concept-gallery{overflow-x:auto}.studio-concept-grid{min-width:540px}.studio-gallery-heading,.studio-gallery-more{align-items:flex-start;flex-direction:column}.studio-concept-detail-heading{flex-wrap:wrap}}
