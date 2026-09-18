@@ -68,6 +68,12 @@ test('minor issues do not spend an extra image generation', async () => {
   await generateQuickDesign(f.brief,f.state,f.deps);
   assert.equal(f.calls.filter(c=>c[0]==='image').length,3);
 });
+test('review receives the adopted copy so creative slogans are not mistaken for invented facts', async () => {
+  const f=fixture(), texts=[];
+  f.deps.review=async(_kind,_plan,_original,_refs,_revised,_pending,copyText)=>{texts.push(copyText);return good};
+  await generateQuickDesign(f.brief,f.state,f.deps);
+  assert.deepEqual(texts,['标语：日常柔润','标语：日常柔润','标语：日常柔润']);
+});
 test('review and repair failures preserve originals, report incomplete review, and continue other assets', async () => {
   for(const phase of ['review','repair','compare']) {
     const f=fixture(), image=f.deps.image;

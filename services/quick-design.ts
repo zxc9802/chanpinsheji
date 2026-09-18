@@ -12,7 +12,7 @@ export function groundedBrief(brief: DesignBrief, sources: BriefFieldSources): D
 }
 export type QuickDesignDependencies = {
   plan: (pendingId?: string) => Promise<DesignPlan>;
-  review: (stage: AssetKind, plan: DesignPlan, original: string, refs: string[], revised?: string, pendingId?: string) => Promise<DesignReview>;
+  review: (stage: AssetKind, plan: DesignPlan, original: string, refs: string[], revised?: string, pendingId?: string, copyText?: string) => Promise<DesignReview>;
   copy: (brief: DesignBrief, hint: string) => Promise<QuickBundle['copy']>;
   image: (stage: AssetKind, prompt: string, refs: string[], pendingId?: string, phase?: 'generate' | 'repair') => Promise<string>;
   checkpoint: (patch: Partial<StudioState>) => void;
@@ -56,7 +56,7 @@ export async function generateQuickDesign(brief: DesignBrief, state: StudioState
     const runReview = async (revised?: string) => {
       const step = `${revised ? 'compare' : 'review'}:${stage}` as const;
       checkpoint(step);
-      const result = await deps.review(stage, plan, review!.original, refs, revised, state.creativePending?.step === step ? state.creativePending.jobId : undefined);
+      const result = await deps.review(stage, plan, review!.original, refs, revised, state.creativePending?.step === step ? state.creativePending.jobId : undefined, draft.copy?.fields.map(f => `${f.label}：${f.content}`).join('\n'));
       checkpoint(step, { creativePending: undefined });
       return result;
     };

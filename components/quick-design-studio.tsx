@@ -66,7 +66,7 @@ export function QuickDesignStudio() {
       const bundle = await generateQuickDesign(brief, initial, {
         active: () => active(id), checkpoint: value => ctx.updateStudio(id, s => ({ ...s, ...value })),
         plan: pendingId => studioCreativeTask<DesignPlan>({ action: 'plan', ...creativeContext, reference: initial.reference?.dataUrl }, pendingId, onCreativePending('plan')),
-        review: (stage, plan, original, references, revised, pendingId) => studioCreativeTask<DesignReview>({ action: 'review', ...creativeContext, kind: stage, plan, original, revised, references }, pendingId, onCreativePending(`${revised ? 'compare' : 'review'}:${stage}`)),
+        review: (stage, plan, original, references, revised, pendingId, copyText) => studioCreativeTask<DesignReview>({ action: 'review', ...creativeContext, kind: stage, plan, original, revised, references, copyText }, pendingId, onCreativePending(`${revised ? 'compare' : 'review'}:${stage}`)),
         copy: async (b, hint) => { const options = await copyGenerator.generate({ brief: b, toneHint: hint }); if (!options[0]?.fields?.length) throw new Error('文案没有返回有效内容'); return options[0]; },
         image: async (stage, prompt, refs, pendingId, phase) => {
           if (!active(id)) throw new Error('已离开当前项目');
