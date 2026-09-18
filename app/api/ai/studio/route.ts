@@ -14,7 +14,7 @@ export async function POST(request: Request) {
     const input = validateCreativeRequest(await request.json());
     for (const id of owners.keys()) if (!jobs.get(id)) owners.delete(id);
     const job = jobs.enqueue(userId, async () => {
-      const result = await runStudioCreativeTask(input, aiServerConfig.regionVision, userId);
+      const result = await runStudioCreativeTask(input, aiServerConfig.regionVision, userId, job.id);
       return { data: [JSON.stringify(result.data)], usage: { ...result.usage, images: 0 } };
     });
     owners.set(job.id, userId);
