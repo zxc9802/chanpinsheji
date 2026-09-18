@@ -79,6 +79,10 @@ export function RegionEditor(props: {
     return [Math.max(0, Math.min(1000, (e.clientX - rect.left) / rect.width * 1000)), Math.max(0, Math.min(1000, (e.clientY - rect.top) / rect.height * 1000))];
   }
   const locked = !!busy || !!preview || !!props.pending;
+  const selectedCorner = selected && {
+    left: `${Math.min(Math.max(...selected.polygon.map(p => p[0])), 960) / 10}%`,
+    top: `${Math.min(Math.max(...selected.polygon.map(p => p[1])), 960) / 10}%`,
+  };
   return <div className="region-editor">
     <div className="studio-canvas-column">
       <div className="canvas-toolbar" role="toolbar" aria-label="图片编辑工具">
@@ -110,6 +114,7 @@ export function RegionEditor(props: {
             {regions.filter(r => r.id !== selected?.id).map(r => <polygon key={r.id} points={r.polygon.map(p => p.join(',')).join(' ')} className="region-outline"><title>{r.label}{r.text ? `：${r.text}` : ''}</title></polygon>)}
             {selected && <><polygon points={selected.polygon.map(p => p.join(',')).join(' ')} className="region-selected" />{selected.polygon.map((p, i) => <circle key={i} cx={p[0]} cy={p[1]} r="7" className="region-handle" data-vertex={i} />)}</>}
           </svg>}
+          {selected && selectedCorner && !preview && <button type="button" className="region-clear" style={selectedCorner} disabled={locked} aria-label="取消框选" title="取消框选" onPointerDown={e => e.stopPropagation()} onClick={e => { e.stopPropagation(); choose(); }}>×</button>}
         </div> : <div className="studio-placeholder">正在读取设计图…</div>}
       </div>
       {preview && <div className="preview-actions"><button onClick={() => setBefore(!before)}>{before ? '查看修改后' : '查看修改前'}</button><button onClick={() => { setPreview(''); props.onPending(undefined); }}>放弃这次修改</button><button className="studio-primary" onClick={() => { props.onAdopt(preview, props.pending?.replacementText ? `替换文字：${props.pending.replacementText}` : props.pending?.instruction || 'AI 自主调整'); props.onPending(undefined); }}>采用这版设计</button></div>}
