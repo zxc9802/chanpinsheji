@@ -482,9 +482,9 @@ export function DesignBriefProvider({ children }: { children: React.ReactNode })
       const now = new Date().toISOString();
       const logoAsset: BrandLogoAsset = { type: "logo", id: `${projectId}:logo`, brandName: old.brief.brand.name, projectId, candidate: bundle.logo, finalizedAt: now };
       const copyAsset: BrandCopyAsset = { type: "copy", id: `${projectId}:copy`, brandName: old.brief.brand.name, projectId, copyPackage: bundle.copy, finalizedAt: now };
-      const versions = (["logo", "product", "packaging"] as const).map(kind => ({ id: crypto.randomUUID(), kind, imageUrl: kind === "packaging" ? bundle.packaging.previewImageUrl : bundle[kind].imageUrl, instruction: "一键生成", createdAt: now }));
+      const versions = (["logo", "product", "packaging"] as const).map(kind => ({ id: crypto.randomUUID(), kind, imageUrl: kind === "packaging" ? bundle.packaging.previewImageUrl : bundle[kind].imageUrl, instruction: "一键生成", createdAt: now })).filter(v => !old.studio.versions.some(existing => existing.kind === v.kind && existing.imageUrl === v.imageUrl));
       return { ...old,
-        studio: { ...old.studio, draft: bundle, stage: "completed", pending: undefined, error: undefined, versions: [...old.studio.versions, ...versions] },
+        studio: { ...old.studio, draft: bundle, stage: "completed", pending: undefined, creativePending: undefined, error: undefined, versions: [...old.studio.versions, ...versions] },
         logoProject: { ...old.logoProject, candidates: [...old.logoProject.candidates.filter(c => c.id !== bundle.logo.id), bundle.logo], finalLogoId: bundle.logo.id },
         copyProject: { ...old.copyProject, packages: [...old.copyProject.packages.filter(c => c.id !== bundle.copy.id), bundle.copy], finalPackage: bundle.copy },
         productDesign: { ...old.productDesign, selectedContainerTypeId: bundle.container.id, selectedVolume: bundle.container.volumeOptions[0], customContainers: [...old.productDesign.customContainers.filter(c => c.id !== bundle.container.id), bundle.container], structureConfirmed: true, candidates: [...old.productDesign.candidates.filter(c => c.id !== bundle.product.id), bundle.product], finalDesignId: bundle.product.id, finalWarnings: ["一键方案待质检确认"] },

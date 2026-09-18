@@ -159,3 +159,13 @@ through the mode switch and shares the same project assets.
   product and packaging images and retains previous versions.
 
 Validation: `npm run build` and `node --test tests/*.test.mjs`.
+
+### 一键设计的策划与审稿
+
+一键模式先根据产品资料与可选参考图生成整套视觉方案，再依次生成 Logo、内包装、外包装。视觉方案明确核心创意、参考取舍、配色用途、字体层级、瓶型材质与外盒版式，并随项目保存。返回第一步不重新解析文档；资料、设计想法或参考图改变时重新策划。
+
+每个新生成的资产先保存原图，再由视觉模型检查。只有明确的重大问题会触发一次自动修正；之后比较原图与修正版，选择明确改善的一版。两版保留在版本记录中。审稿或自动修正失败时保留原图，界面明确提示未完成，继续后续资产；不会把失败当成通过。AI 审稿是辅助判断，不能证明印刷或工程可生产性。
+
+策划、审稿和比较共用现有 `REGION_VISION_API_KEY` / `REGION_VISION_BASE_URL` / `REGION_VISION_MODEL`（默认 OpenLux Gemini），无需新增环境变量。`POST /api/ai/studio` 返回 jobId，`GET /api/ai/studio?jobId=...` 查询结果，按登录用户隔离并使用现有主站计费。图片继续使用 fal、high、白底、内外包装正侧背三视图。
+
+刷新后可继续查询已保存的策划、审稿及修正任务；单个资产最多自动修正一次。任务仍沿用现有进程内队列，服务重启后失效，终态结果保留 15 分钟。额外成本为一份策划、每个新资产一次审稿，以及有重大问题时的一次修正和比较；没有重大问题不会额外生图。

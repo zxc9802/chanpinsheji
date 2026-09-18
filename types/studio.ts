@@ -30,6 +30,30 @@ export type StudioVersion = {
   instruction: string;
   createdAt: string;
 };
+export type DesignPlan = {
+  concept: string;
+  referenceInsights: string;
+  palette: { color: string; role: string }[];
+  typography: string;
+  logo: string;
+  product: string;
+  packaging: string;
+};
+export type DesignReview = {
+  summary: string;
+  issues: { severity: 'major' | 'minor'; location: string; problem: string; fix: string }[];
+  preferred?: 'original' | 'revised';
+};
+export type StudioReview = {
+  original: string;
+  revised?: string;
+  review?: DesignReview;
+  comparison?: DesignReview;
+  status: 'reviewing' | 'repairing' | 'comparing' | 'done' | 'unavailable';
+  selected?: 'original' | 'revised';
+  warning?: string;
+};
+export type CreativeStep = 'plan' | `review:${AssetKind}` | `compare:${AssetKind}`;
 export type StudioState = {
   // References saved before modes existed were always used to preserve structure.
   reference?: { name: string; dataUrl: string; mode?: "style" | "structure" };
@@ -38,7 +62,10 @@ export type StudioState = {
   draft: Partial<QuickBundle>;
   stage: string;
   error?: string;
-  pending?: { jobId: string; stage: AssetKind };
+  pending?: { jobId: string; stage: AssetKind; phase?: 'generate' | 'repair' };
+  direction?: { inputKey: string; plan: DesignPlan };
+  creativePending?: { jobId: string; step: CreativeStep };
+  reviews?: Partial<Record<AssetKind, StudioReview>>;
   edit?: { kind: AssetKind; assetId: string; pending: { jobId: string; original: string; region?: DesignRegion; segmentedMask?: string; instruction: string; replacementText: string } };
   regions: Record<string, DesignRegion[]>;
   versions: StudioVersion[];

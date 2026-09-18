@@ -2,10 +2,14 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { parseDesignRegions, rectangleRegion, regionAtPoint, buildRegionEditPrompt } from '../lib/design-regions.ts';
 import { compositePixels, transparentEditMask } from '../lib/region-pixels.ts';
-import { generateQuickDesign, groundedBrief } from '../services/quick-design.ts';
+import { generateQuickDesign as generate, groundedBrief } from '../services/quick-design.ts';
 import { emptyDesignBrief } from '../types/design-brief.ts';
 import { emptyStudioState } from '../types/studio.ts';
 import { validateRegionImage } from '../lib/region-recognition.ts';
+
+
+const plan = { concept:'自然几何', referenceInsights:'按产品定位原创', palette:[{color:'#394E44',role:'品牌主色'}], typography:'主次清晰', logo:'几何字标', product:'圆肩磨砂瓶', packaging:'沿用圆弧图形' };
+const generateQuickDesign = (brief, state, deps) => generate(brief, state, { plan: async () => plan, review: async () => ({ summary:'未发现明显问题', issues:[] }), ...deps });
 
 const box = (x,y,w,h) => [[x,y],[x+w,y],[x+w,y+h],[x,y+h]];
 test('nested region selection chooses text over its containing package', () => {
