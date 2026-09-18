@@ -9,7 +9,6 @@ export type PendingEdit = { jobId: string; original: string; region?: DesignRegi
 export function RegionEditor(props: {
   imageUrl: string; brandName: string; productName: string; regions: DesignRegion[];
   onRegions: (regions: DesignRegion[]) => void; onAdopt: (url: string, instruction: string) => void;
-  autoRecognize?: boolean;
   onBusyChange?: (busy: boolean) => void;
   assetKind?: AssetKind;
   pending?: PendingEdit; onPending: (pending?: PendingEdit) => void;
@@ -28,27 +27,15 @@ export function RegionEditor(props: {
   const [canvasSize, setCanvasSize] = useState({ width: 600, height: 600 });
   useEffect(() => { const el = canvasRef.current; if (!el) return; const observer = new ResizeObserver(() => { const style = getComputedStyle(el); setCanvasSize({ width: el.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight), height: el.clientHeight - parseFloat(style.paddingTop) - parseFloat(style.paddingBottom) }); }); observer.observe(el); return () => observer.disconnect(); }, []);
   const fittedWidth = Math.min(canvasSize.width, canvasSize.height * dimensions.width / dimensions.height);
-  const autoStarted = useRef(false);
   const alive = useRef(true), drag = useRef<{ start?: Point; vertex?: number } | null>(null);
   useEffect(() => { alive.current = true; localImage(props.imageUrl).then(async url => { const img = await loadImage(url); if (alive.current) { setSource(url); setDimensions({ width: img.width, height: img.height }); } }).catch(e => { if (alive.current) setError(e.message); }); return () => { alive.current = false; }; }, [props.imageUrl]);
   const saveRegions = (next: DesignRegion[]) => { setRegions(next); props.onRegions(next); };
   const choose = (region?: DesignRegion) => { setSelected(region); setWhole(false); setDrawing(false); setReplacement(''); setSegmentedMask(undefined); setOverlay(''); setPreview(''); setError(''); };
   async function task(label: string, run: () => Promise<void>) { if (busy) return; setBusy(label); setError(''); try { await run(); } catch (e) { if (alive.current) setError(e instanceof Error ? e.message : '操作失败'); } finally { if (alive.current) setBusy(''); } }
   const recognize = () => task('正在识别文字、Logo 和物体…', async () => {
-    props.onRegions(regions); // Persist the attempt before submitting, so refresh does not auto-submit again.
-    try {
-      const result = await regionTask<{ regions: DesignRegion[] }>({ action: 'detect', image: source });
-      if (alive.current) { saveRegions(result.regions); if (!result.regions.length) setError('没有识别到清晰区域，可以手动框选'); }
-    } catch (error) {
-      if (alive.current) props.onRegions(regions);
-      throw error;
-    }
+    const result = await regionTask<{ regions: DesignRegion[] }>({ action: 'detect', image: source });
+    if (alive.current) { saveRegions(result.regions); if (!result.regions.length) setError('没有识别到清晰区域，可以手动框选'); }
   });
-  useEffect(() => {
-    if (!source || !props.autoRecognize || props.pending || autoStarted.current) return;
-    autoStarted.current = true;
-    void recognize();
-  }, [source, props.autoRecognize, props.pending]);
   const refine = () => task('正在精细分割边缘…', async () => {
     if (!selected) return;
     const result = await regionTask<{ maskUrl: string }>({ action: 'segment', image: source, region: selected, ...dimensions });
