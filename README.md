@@ -169,3 +169,5 @@ Validation: `npm run build` and `node --test tests/*.test.mjs`.
 策划、审稿和比较共用现有 `REGION_VISION_API_KEY` / `REGION_VISION_BASE_URL` / `REGION_VISION_MODEL`（默认 OpenLux Gemini），无需新增环境变量。`POST /api/ai/studio` 返回 jobId，`GET /api/ai/studio?jobId=...` 查询结果，按登录用户隔离并使用现有主站计费。图片继续使用 fal、high、白底、内外包装正侧背三视图。
 
 刷新后可继续查询已保存的策划、审稿及修正任务；单个资产最多自动修正一次。任务仍沿用现有进程内队列，服务重启后失效，终态结果保留 15 分钟。额外成本为一份策划、每个新资产一次审稿，以及有重大问题时的一次修正和比较；没有重大问题不会额外生图。
+
+视觉策划使用 Gemini JSON Schema 约束必填字段。模型返回对象或列表形式的说明时，无损展开为文字；缺字段、超长或截断时，在原 jobId 内自动整理一次，最多两轮策划输出，实际文本调用均按现有计费记录。仍失败时返回具体字段原因与任务编号，不生成默认方案。服务日志搜索 `[studio:plan]` 或该 jobId，可见字段类型、长度、模型终止原因和重试次数；日志不包含原始文档、模型正文、图片或密钥。历史失败任务未保留的原始响应无法通过新日志追溯。
