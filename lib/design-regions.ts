@@ -35,6 +35,13 @@ export function rectangleRegion(a: Point, b: Point): DesignRegion | undefined {
   if (right - x < 3 || bottom - y < 3) return;
   return { id: `manual-${Date.now()}`, kind: "decoration", label: "手动选区", polygon: [[x, y], [right, y], [right, bottom], [x, bottom]], confidence: 1, source: "manual" };
 }
+export function translatePolygon(polygon: Point[], dx: number, dy: number): Point[] {
+  if (!polygon.length) return polygon;
+  const xs = polygon.map(p => p[0]), ys = polygon.map(p => p[1]);
+  const shiftX = Math.max(-Math.min(...xs), Math.min(1000 - Math.max(...xs), dx));
+  const shiftY = Math.max(-Math.min(...ys), Math.min(1000 - Math.max(...ys), dy));
+  return polygon.map(([x, y]) => [x + shiftX, y + shiftY]);
+}
 export function buildRegionEditPrompt(args: { region?: DesignRegion; instruction?: string; replacementText?: string; brandName: string; productName: string; assetKind?: AssetKind; hasReference?: boolean }) {
   const { region } = args;
   const replacement = args.replacementText?.trim();

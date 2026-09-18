@@ -1,7 +1,7 @@
 'use client';
 import { useEffect, useRef, useState } from 'react';
 import type { AssetKind, DesignRegion, Point } from '@/types/studio';
-import { buildRegionEditPrompt, rectangleRegion, regionAtPoint } from '@/lib/design-regions';
+import { buildRegionEditPrompt, rectangleRegion, regionAtPoint, translatePolygon } from '@/lib/design-regions';
 import { loadImage, localImage, mergeRegion, prepareUpload, regionTask, selectionMask } from '@/lib/studio-images';
 import { pollImageJob, startImageJob } from '@/lib/ai-client';
 
@@ -14,7 +14,9 @@ export function RegionEditor(props: {
   pending?: PendingEdit; onPending: (pending?: PendingEdit) => void;
 }) {
   const [source, setSource] = useState(''), [regions, setRegions] = useState(props.regions);
-  const [selected, setSelected] = useState<DesignRegion>(), [whole, setWhole] = useState(false), [drawing, setDrawing] = useState(false);
+  const [selected, setSelected] = useState<DesignRegion>(), [whole, setWhole] = useState(false), [drawing, setDrawing] = useState(false), [moving, setMoving] = useState(false);
+  const selectedRef = useRef<DesignRegion | undefined>(undefined);
+  selectedRef.current = selected;
   const [instruction, setInstruction] = useState(''), [replacementText, setReplacement] = useState('');
   const [reference, setReference] = useState<{ name: string; dataUrl: string }>();
   const [referenceDragging, setReferenceDragging] = useState(false);
@@ -27,7 +29,7 @@ export function RegionEditor(props: {
   const [canvasSize, setCanvasSize] = useState({ width: 600, height: 600 });
   useEffect(() => { const el = canvasRef.current; if (!el) return; const observer = new ResizeObserver(() => { const style = getComputedStyle(el); setCanvasSize({ width: el.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight), height: el.clientHeight - parseFloat(style.paddingTop) - parseFloat(style.paddingBottom) }); }); observer.observe(el); return () => observer.disconnect(); }, []);
   const fittedWidth = Math.min(canvasSize.width, canvasSize.height * dimensions.width / dimensions.height);
-  const alive = useRef(true), drag = useRef<{ start?: Point; vertex?: number } | null>(null);
+  const alive = useRef(true), drag = useRef<{ start?: Point; vertex?: number; move?: { origin: Point; region: DesignRegion; active: boolean } } | null>(null);
   useEffect(() => { alive.current = true; localImage(props.imageUrl).then(async url => { const img = await loadImage(url); if (alive.current) { setSource(url); setDimensions({ width: img.width, height: img.height }); } }).catch(e => { if (alive.current) setError(e.message); }); return () => { alive.current = false; }; }, [props.imageUrl]);
   const saveRegions = (next: DesignRegion[]) => { setRegions(next); props.onRegions(next); };
   const choose = (region?: DesignRegion) => { setSelected(region); setWhole(false); setDrawing(false); setReplacement(''); setSegmentedMask(undefined); setOverlay(''); setPreview(''); setError(''); };
@@ -88,13 +90,13 @@ export function RegionEditor(props: {
         <button disabled={!source || locked} onClick={recognize}>⌖ 自动识别区域</button>
         <button className={drawing ? 'active' : ''} disabled={!source || locked} onClick={() => { choose(); setDrawing(true); }}>▧ 手动框选</button>
         <button className={whole ? 'active' : ''} disabled={!source || locked} onClick={() => { choose(); setWhole(true); }}>整体修改</button>
-        <span>{preview ? '修改预览' : drawing ? '在图片上拖动框选' : '点击文字、Logo 或包装'}</span>
+        <span>{preview ? '修改预览' : drawing ? '在图片上拖动框选' : moving ? '拖动选框移动位置' : '点击选框后可拖动，或拖动圆点调整范围'}</span>
       </div>
       <div className="studio-canvas" ref={canvasRef}>
         {source ? <div className="region-image-wrap" style={{ width: fittedWidth, height: fittedWidth * dimensions.height / dimensions.width }}>
           <img src={preview && !before ? preview : source} alt={preview && !before ? '修改后预览' : '当前设计'} />
           {!preview && overlay && <img src={overlay} alt="精细识别的选区" className="region-mask" />}
-          {!preview && <svg viewBox="0 0 1000 1000" preserveAspectRatio="none" className={`region-map ${drawing ? 'drawing' : ''}`} aria-label="可编辑区域画布"
+          {!preview && <svg viewBox="0 0 1000 1000" preserveAspectRatio="none" className={`region-map${drawing ? ' drawing' : ''}${moving ? ' is-moving' : ''}`} aria-label="可编辑区域画布"
             onPointerDown={e => {
               if (locked) return;
               const p = point(e);
@@ -103,16 +105,37 @@ export function RegionEditor(props: {
               e.currentTarget.setPointerCapture(e.pointerId);
               if (vertex !== null && selected) drag.current = { vertex: Number(vertex) };
               else if (drawing) drag.current = { start: p };
-              else choose(regionAtPoint(regions, p));
+              else {
+                const hit = regionAtPoint(regions, p);
+                if (hit) {
+                  const region = selected?.id === hit.id ? selected : hit;
+                  if (selected?.id !== hit.id) choose(hit);
+                  drag.current = { move: { origin: p, region, active: false } };
+                } else choose();
+              }
             }}
             onPointerMove={e => {
               if (!drag.current || locked) return;
-              const p = point(e); setSegmentedMask(undefined); setOverlay('');
-              if (drag.current.start) { const r = rectangleRegion(drag.current.start, p); if (r) setSelected(r); }
-              else if (selected && drag.current.vertex !== undefined) setSelected({ ...selected, source: 'manual', polygon: selected.polygon.map((v, i) => i === drag.current?.vertex ? p : v) });
+              const p = point(e);
+              if (drag.current.start) { setSegmentedMask(undefined); setOverlay(''); const r = rectangleRegion(drag.current.start, p); if (r) { selectedRef.current = r; setSelected(r); } }
+              else if (selected && drag.current.vertex !== undefined) { setSegmentedMask(undefined); setOverlay(''); const next = { ...selected, source: 'manual' as const, polygon: selected.polygon.map((v, i) => i === drag.current?.vertex ? p : v) }; selectedRef.current = next; setSelected(next); }
+              else if (drag.current.move) {
+                const { origin, region } = drag.current.move;
+                const dx = p[0] - origin[0], dy = p[1] - origin[1];
+                if (!drag.current.move.active && dx * dx + dy * dy < 9) return;
+                drag.current.move.active = true;
+                const next = { ...region, source: 'manual' as const, polygon: translatePolygon(region.polygon, dx, dy) };
+                selectedRef.current = next; setMoving(true); setSegmentedMask(undefined); setOverlay(''); setSelected(next);
+              }
             }}
-            onPointerUp={() => { if (drag.current && selected) { saveRegions([...regions.filter(r => r.id !== selected.id), selected]); setDrawing(false); } drag.current = null; }}
-            onPointerCancel={() => { drag.current = null; }}>
+            onPointerUp={() => {
+              const current = selectedRef.current;
+              const movingBox = drag.current?.move;
+              if (movingBox && !movingBox.active) { drag.current = null; setMoving(false); return; }
+              if (drag.current && current) { saveRegions([...regions.filter(r => r.id !== current.id), current]); setDrawing(false); }
+              drag.current = null; setMoving(false);
+            }}
+            onPointerCancel={() => { drag.current = null; setMoving(false); }}>
             {regions.filter(r => r.id !== selected?.id).map(r => <polygon key={r.id} points={r.polygon.map(p => p.join(',')).join(' ')} className="region-outline"><title>{r.label}{r.text ? `：${r.text}` : ''}</title></polygon>)}
             {selected && <><polygon points={selected.polygon.map(p => p.join(',')).join(' ')} className="region-selected" />{selected.polygon.map((p, i) => <circle key={i} cx={p[0]} cy={p[1]} r="7" className="region-handle" data-vertex={i} />)}</>}
           </svg>}
@@ -123,9 +146,9 @@ export function RegionEditor(props: {
     </div>
     <aside className="region-panel">
       <div className="studio-eyebrow">局部精修</div><h3>{whole ? '修改整体设计' : selected?.label || '先选中想修改的部分'}</h3>
-      {!selected && !whole && <p>先自动识别，也可以手动框选。选中后拖动圆点，调整到准确范围。</p>}
+      {!selected && !whole && <p>先自动识别，也可以手动框选。选中后拖动选框移动位置，或拖动圆点调整范围。</p>}
       {selected && <>
-        <div className="region-status">{segmentedMask ? '✓ 已精细分割，请核对高亮范围' : selected.source === 'manual' ? '手动选区 · 可拖动边界' : `自动识别 · 置信度 ${Math.round(selected.confidence * 100)}%`}</div>
+        <div className="region-status">{segmentedMask ? '✓ 已精细分割，请核对高亮范围' : selected.source === 'manual' ? '手动选区 · 可拖动整框或边界' : `自动识别 · 置信度 ${Math.round(selected.confidence * 100)}%`}</div>
         <label>选区类型<select disabled={locked} value={selected.kind} onChange={e => { const next = { ...selected, kind: e.target.value as DesignRegion['kind'] }; setSelected(next); saveRegions(regions.map(r => r.id === next.id ? next : r)); }}><option value="text">文字</option><option value="logo">Logo</option><option value="bottle">瓶身 / 产品</option><option value="packaging">外包装</option><option value="decoration">图案 / 其他</option></select></label>
         {selected.text && <div className="recognized-text"><small>识别文字，可与原图核对</small><p>{selected.text}</p></div>}
         {selected.kind === 'text' && <label>替换成什么文字？<textarea disabled={locked} value={replacementText} onChange={e => setReplacement(e.target.value)} placeholder="需要指定文字时填写；留空则让 AI 调整表达" /></label>}

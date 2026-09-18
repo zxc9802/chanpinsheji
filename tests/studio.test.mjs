@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { parseDesignRegions, rectangleRegion, regionAtPoint, buildRegionEditPrompt } from '../lib/design-regions.ts';
+import { parseDesignRegions, rectangleRegion, regionAtPoint, buildRegionEditPrompt, translatePolygon } from '../lib/design-regions.ts';
 import { compositePixels, transparentEditMask } from '../lib/region-pixels.ts';
 import { generateQuickDesign as generate, groundedBrief } from '../services/quick-design.ts';
 import { emptyDesignBrief } from '../types/design-brief.ts';
@@ -23,6 +23,8 @@ test('invalid, degenerate and out of bounds polygons are rejected, never silentl
   assert.throws(()=>parseDesignRegions({}),/有效/);
   assert.deepEqual(rectangleRegion([900,700],[10,20]).polygon,box(10,20,890,680));
   assert.equal(rectangleRegion([1,1],[2,2]),undefined);
+  assert.deepEqual(translatePolygon(box(100,80,40,30), 20, -10), box(120,70,40,30));
+  assert.deepEqual(translatePolygon(box(980,10,20,20), 50, -40), box(980,0,20,20));
 });
 test('regional compositing preserves every unselected RGBA byte including transparent pixels', () => {
   const original = new Uint8ClampedArray([12,34,56,0, 30,40,50,255, 99,98,97,255]);
