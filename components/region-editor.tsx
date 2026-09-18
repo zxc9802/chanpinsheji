@@ -67,8 +67,20 @@ export function RegionEditor(props: {
   }
   const locked = !!busy || !!preview || !!props.pending;
   const selectedCorner = selected && {
-    left: `${Math.min(Math.max(...selected.polygon.map(p => p[0])), 960) / 10}%`,
-    top: `${Math.min(Math.max(...selected.polygon.map(p => p[1])), 960) / 10}%`,
+    x: Math.min(Math.max(...selected.polygon.map(p => p[0])), 960),
+    y: Math.min(Math.max(...selected.polygon.map(p => p[1])), 960),
+  };
+  const dismissSelected = () => {
+    if (!selected || locked) return;
+    saveRegions(regions.filter(r => r.id !== selected.id));
+    choose();
+  };
+  const hitsClear = (p: Point) => {
+    if (!selectedCorner || fittedWidth <= 0) return false;
+    const height = fittedWidth * dimensions.height / dimensions.width;
+    const px = p[0] / 1000 * fittedWidth, py = p[1] / 1000 * height;
+    const left = selectedCorner.x / 1000 * fittedWidth, top = selectedCorner.y / 1000 * height;
+    return px >= left - 8 && px <= left + 30 && py >= top - 8 && py <= top + 30;
   };
   return <div className="region-editor">
     <div className="studio-canvas-column">
@@ -84,8 +96,11 @@ export function RegionEditor(props: {
           {!preview && overlay && <img src={overlay} alt="精细识别的选区" className="region-mask" />}
           {!preview && <svg viewBox="0 0 1000 1000" preserveAspectRatio="none" className={`region-map ${drawing ? 'drawing' : ''}`} aria-label="可编辑区域画布"
             onPointerDown={e => {
-              if (locked) return; e.currentTarget.setPointerCapture(e.pointerId); const p = point(e);
+              if (locked) return;
+              const p = point(e);
               const vertex = (e.target as Element).getAttribute('data-vertex');
+              if (vertex === null && hitsClear(p)) { e.preventDefault(); dismissSelected(); return; }
+              e.currentTarget.setPointerCapture(e.pointerId);
               if (vertex !== null && selected) drag.current = { vertex: Number(vertex) };
               else if (drawing) drag.current = { start: p };
               else choose(regionAtPoint(regions, p));
@@ -101,7 +116,7 @@ export function RegionEditor(props: {
             {regions.filter(r => r.id !== selected?.id).map(r => <polygon key={r.id} points={r.polygon.map(p => p.join(',')).join(' ')} className="region-outline"><title>{r.label}{r.text ? `：${r.text}` : ''}</title></polygon>)}
             {selected && <><polygon points={selected.polygon.map(p => p.join(',')).join(' ')} className="region-selected" />{selected.polygon.map((p, i) => <circle key={i} cx={p[0]} cy={p[1]} r="7" className="region-handle" data-vertex={i} />)}</>}
           </svg>}
-          {selected && selectedCorner && !preview && <button type="button" className="region-clear" style={selectedCorner} disabled={locked} aria-label="取消框选" title="取消框选" onPointerDown={e => e.stopPropagation()} onClick={e => { e.stopPropagation(); choose(); }}>×</button>}
+          {selected && selectedCorner && !preview && <button type="button" className="region-clear" style={{ left: `${selectedCorner.x / 10}%`, top: `${selectedCorner.y / 10}%` }} disabled={locked} aria-label="取消框选" title="取消框选" onPointerDown={e => { e.preventDefault(); e.stopPropagation(); dismissSelected(); }} onClick={e => { e.preventDefault(); e.stopPropagation(); }}>×</button>}
         </div> : <div className="studio-placeholder">正在读取设计图…</div>}
       </div>
       {preview && <div className="preview-actions"><button onClick={() => setBefore(!before)}>{before ? '查看修改后' : '查看修改前'}</button><button onClick={() => { setPreview(''); props.onPending(undefined); }}>放弃这次修改</button><button className="studio-primary" onClick={() => { props.onAdopt(preview, props.pending?.replacementText ? `替换文字：${props.pending.replacementText}` : props.pending?.instruction || 'AI 自主调整'); props.onPending(undefined); }}>采用这版设计</button></div>}
