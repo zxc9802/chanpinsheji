@@ -27,4 +27,7 @@ test("product and packaging prompts inject the craft block", async () => {
   assert.match(directionPrompt, /主光\/工艺\/镜头/);
   assert.match(packagingGenerator, /buildImageCraftBlock/);
   assert.match(packagingGenerator, /subject:"outer_package"/);
+  const studio = await read("../services/quick-design.ts");
+  assert.match(studio, /buildImageCraftBlock/);
+  assert.match(studio, /subject: 'outer_package'/);
 });

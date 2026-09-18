@@ -32,9 +32,9 @@ export function prepareStudioConcepts(state: StudioState): StudioState {
 }
 
 const approaches = [
-  '以品牌字标与排版秩序为视觉核心，探索精确比例、留白与清晰信息层级。',
-  '以独特的品牌图形符号为视觉核心，探索鲜明的图形构成与包装版式。',
-  '以产品器型、材质触感及工艺细节为视觉核心，探索不同的结构或表面设计语言。',
+  '主视觉策略：大面积品牌色块分割盒面与标签，至少一块颜色占主展示面 40% 以上，可叠加纸纹或专色油墨，禁止白纸加小 Logo。',
+  '主视觉策略：满版插画、连续图案或大面积图形铺满盒面与标签，图形是第一眼，字标叠在图形上，禁止只放中心小图标。',
+  '主视觉策略：把品牌字标放大成主视觉，配合强对比底色或色带，字标或色带至少占主展示面 40%，禁止细小居中 Logo。',
 ];
 
 export async function generateStudioConcepts(brief: DesignBrief, initial: StudioState, options: {

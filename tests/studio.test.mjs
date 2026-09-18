@@ -71,6 +71,10 @@ test('new bundle generation uses white backgrounds and consistent three-view pro
     assert.match(item.prompt, /三视图/);
     assert.match(item.prompt, /完整正面、完整侧面、完整背面/);
     assert.match(item.prompt, /同尺度、同基线/);
+    assert.match(item.prompt, /仅指图片周围的空白/);
+    assert.match(item.prompt, /40% 以上/);
+    assert.match(item.prompt, /禁止白纸或浅底上只放一个小 Logo/);
+    assert.doesNotMatch(item.prompt, /不要.*色块背景、渐变/);
   }
   assert.equal(result.product.viewMode, 'three_view');
   assert.equal(result.container.viewMode, 'three_view');
