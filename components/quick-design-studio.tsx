@@ -12,7 +12,7 @@ import { pollImageJob, startImageJob } from '@/lib/ai-client';
 import { recordAiUsage } from '@/lib/ai-usage';
 import type { AssetKind, QuickBundle, StudioState, CreativeStep, DesignPlan, DesignReview } from '@/types/studio';
 
-const labels: Record<string, string> = { idle: '准备资料', plan: '确定整套视觉方案', copy: '规划包装文案', logo: '设计品牌 Logo', product: '设计产品瓶身', packaging: '设计外包装', completed: '整套方案已生成' };
+const labels: Record<string, string> = { idle: '准备资料', document: '提取产品资料', plan: '确定整套视觉方案', copy: '规划包装文案', logo: '设计品牌 Logo', product: '设计产品瓶身', packaging: '设计外包装', completed: '整套方案已生成' };
 const assetNames: Record<AssetKind, string> = { logo: '品牌 Logo', product: '内包装 / 瓶身', packaging: '外包装' };
 for (const [kind, name] of Object.entries(assetNames)) { labels[`review:${kind}`] = `审稿：${name}`; labels[`repair:${kind}`] = `修正：${name}`; labels[`compare:${kind}`] = `比较原图与修正版：${name}`; }
 const resetDraft = { draft: {}, direction: undefined, reviews: {}, stage: 'idle', pending: undefined, creativePending: undefined, error: undefined };
@@ -85,10 +85,21 @@ export function QuickDesignStudio() {
     finally { if (active(id)) setBusy(''); }
   }
   if (!hydrated) return <div className="studio-placeholder">正在读取项目…</div>;
+  const setupVisible = !ready || settingsOpen;
+  const extractingDocument = busy === '正在提取产品文档…';
+  const showDocumentProgress = !!studio.documentName || !!busy || !!studio.pending || !!studio.creativePending;
+  const progressStage = extractingDocument ? 'document' : studio.stage;
+  const stepDone = (stage: string) => !extractingDocument && (stage === 'document' ? !!studio.documentName || ctx.completedSteps.includes(1) : studio.stage === 'completed' || !!(stage === 'plan' ? studio.direction : studio.draft[stage as keyof typeof studio.draft]));
+  const progress = <div className="studio-progress" role="status" aria-label="设计流程进度">
+    <div>{busy && <i className="studio-spinner"/>}<strong>{busy || (studio.error ? '流程已暂停，已保留完成的部分' : studio.pending || studio.creativePending ? '已有任务待继续' : studio.stage === 'completed' ? '整套方案已生成' : '产品资料已就绪')}</strong></div>
+    <ol>{['document', 'plan', 'copy', 'logo', 'product', 'packaging'].map(stage => <li className={busy && (progressStage === stage || progressStage.endsWith(`:${stage}`)) ? 'current' : stepDone(stage) ? 'done' : ''} key={stage}><span>{stepDone(stage) ? '✓' : '•'}</span>{labels[stage]}</li>)}</ol>
+    <p>{!busy && studio.stage === 'idle' && !studio.error ? '点击“一键生成整套方案”开始设计，也可先调整下方资料。' : `当前：${labels[progressStage] || progressStage}。已完成的内容会保留。`}</p>
+  </div>;
+  const documentInput = <input type="file" aria-label="上传产品文档" accept=".pdf,.docx,.txt,.png,.jpg,.jpeg,.webp" disabled={locked} onChange={e => { const file = e.target.files?.[0]; if (file) void upload(file, 'document'); e.target.value = ''; }} />;
   return <div className="quick-studio">
     <header className="studio-heading"><div><div className="studio-eyebrow">PACKPILOT / DESIGN STUDIO</div><h1>{settingsOpen && ready ? '调整资料，继续设计。' : ready ? '让好设计，再进一步。' : '一份产品资料，开始整套原创设计。'}</h1><p>{settingsOpen && ready ? '已保留文档提取结果，无需重新上传或解析。已有设计和历史版本仍会保留。' : ready ? '点选想修改的地方，告诉 AI 你的想法。每一步都可以回看。' : '上传产品文档，AI 从零设计瓶型、瓶盖、Logo、文案与外包装。内外包装输出白底三视图。'}</p></div>{ready && !settingsOpen && <Link className="studio-primary" href="/workflow/6">质检与交付 ↗</Link>}</header>
-    {(!ready || settingsOpen) && <section className="studio-setup">
-      <label className={`studio-upload${documentDragging ? ' is-dragging' : ''}`}
+    {setupVisible && <section className="studio-setup">
+      <div className={`studio-document${documentDragging ? ' is-dragging' : ''}`}
         onDragEnter={e => {
           if (!e.dataTransfer.types.includes('Files')) return;
           e.preventDefault();
@@ -115,12 +126,14 @@ export function QuickDesignStudio() {
           if (files.length !== 1) { setNotice('每次请上传一份产品文档，多份资料可合并后上传。'); return; }
           void upload(files[0], 'document');
         }}>
-        <input type="file" aria-label="上传产品文档" accept=".pdf,.docx,.txt,.png,.jpg,.jpeg,.webp" disabled={locked} onChange={e => { const file = e.target.files?.[0]; if (file) void upload(file, 'document'); e.target.value = ''; }} />
-        <span className="upload-symbol">▤</span>
-        <strong>{documentDragging ? '松开即可上传文档' : studio.documentName || '拖拽产品文档到这里，或点击上传'}</strong>
-        <span>{studio.documentName ? '拖拽或点击可替换文档，自动重新提取产品信息' : '自动提取品牌、卖点与产品信息，直接开始设计'}</span>
-        <small>PDF / Word（.docx）/ TXT / 图片 · 最大 15MB</small>
-      </label>
+        {showDocumentProgress ? <>{progress}<div className="studio-document-file"><span>{documentDragging ? '松开即可替换文档' : studio.documentName || (extractingDocument ? '正在读取上传的文档' : '产品资料')}</span><label className="studio-replace-document">{documentInput}<span>更换文档</span></label></div></> : <label className={`studio-upload${documentDragging ? ' is-dragging' : ''}`}>
+          {documentInput}
+          <span className="upload-symbol">▤</span>
+          <strong>{documentDragging ? '松开即可上传文档' : '拖拽产品文档到这里，或点击上传'}</strong>
+          <span>自动提取品牌、卖点与产品信息，直接开始设计</span>
+          <small>PDF / Word（.docx）/ TXT / 图片 · 最大 15MB</small>
+        </label>}
+      </div>
       {(studio.documentName || brief.brand.name || brief.product.name) && <div className="studio-facts"><label>品牌名<input disabled={locked} value={brief.brand.name} onChange={e => { ctx.setBrief({ ...brief, brand: { ...brief.brand, name: e.target.value } }); patch({ ...resetDraft }); }} /></label><label>产品名<input disabled={locked} value={brief.product.name} onChange={e => { ctx.setBrief({ ...brief, product: { ...brief.product, name: e.target.value } }); patch({ ...resetDraft }); }} /></label><div><small>已提取的产品信息</small><p>{[brief.product.category, ...brief.product.coreSellingPoints.map(p => p.point)].filter(Boolean).join(' · ') || '文档未提供更多产品事实'} <Link href="/workflow/1">查看与修改全部资料 ↗</Link></p></div></div>}
       <details className="studio-reference" open={!!studio.reference}>
         <summary>添加参考图 <small>可选 · 有喜欢的风格或现成瓶型时使用</small></summary>
@@ -131,7 +144,7 @@ export function QuickDesignStudio() {
       <label className="studio-direction">设计想法 <small>可不填，让 AI 根据资料决定</small><input disabled={locked} value={studio.styleHint} onChange={e => patch({ styleHint: e.target.value, ...resetDraft })} placeholder="例如：自然、克制，适合年轻人的高端护肤品牌" /></label>
       <div className="studio-start">{ready && <button disabled={!!busy} onClick={() => setSettingsOpen(false)}>返回设计结果</button>}<button className="studio-primary" disabled={!!busy || !brief.brand.name.trim() || !brief.product.name.trim() || (!studio.documentName && !ctx.completedSteps.includes(1))} onClick={() => generate()}>{studio.stage === "completed" ? "重新生成整套方案" : studio.pending || Object.keys(studio.draft).length ? '继续生成未完成部分' : '一键生成整套方案 →'}</button></div>
     </section>}
-    {busy && <div className="studio-progress" role="status"><div><i className="studio-spinner"/><strong>{busy}</strong></div><ol>{['plan', 'copy', 'logo', 'product', 'packaging'].map(stage => <li className={studio.stage === stage || studio.stage.endsWith(`:${stage}`) ? 'current' : (stage === 'plan' ? studio.direction : studio.draft[stage as keyof typeof studio.draft]) ? 'done' : ''} key={stage}><span>{(stage === 'plan' ? studio.direction : studio.draft[stage as keyof typeof studio.draft]) ? '✓' : '•'}</span>{labels[stage]}</li>)}</ol><p>当前：{labels[studio.stage] || studio.stage}。按任务 ID 查询结果，已完成的部分会保留。</p></div>}
+    {!setupVisible && busy && progress}
     {studio.error && <div className="studio-error" role="alert">{studio.error}<p>已完成的部分仍在。可继续查询；若任务已失败或过期，可仅重试未完成部分。</p><button disabled={!!busy} onClick={() => { patch({ pending: undefined, creativePending: undefined, error: undefined }); setSettingsOpen(true); }}>清除失败任务，保留已完成部分</button></div>}
     {!busy && ready && studio.stage !== 'completed' && (studio.pending || studio.creativePending) && <div className="studio-notice">还有未完成的设计任务。<button onClick={() => generate()}>继续生成未完成部分</button></div>}
     {studio.direction && <details className="studio-copy"><summary>本套设计方向 · {studio.direction.plan.concept}</summary><p>{studio.direction.plan.referenceInsights}</p><div className="studio-copy-fields">{[['配色', studio.direction.plan.palette.map(p => `${p.color}：${p.role}`).join('；')], ['字体与信息层级', studio.direction.plan.typography], ['Logo', studio.direction.plan.logo], ['内包装', studio.direction.plan.product], ['外包装', studio.direction.plan.packaging]].map(([label, value]) => <article key={label}><small>{label}</small><p>{value}</p></article>)}</div></details>}
