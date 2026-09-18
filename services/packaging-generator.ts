@@ -3,6 +3,7 @@ import type { DesignBrief } from "@/types/design-brief";
 import { aiErrorMessage, callAi, getAiProvider } from "@/lib/ai-client";
 import { emitAiNotice } from "@/lib/ai-usage";
 import type { SelectedContainerSpec } from "@/types/container";
+import { buildImageCraftBlock } from "@/services/prompts/image-craft";
 
 export interface PackagingGenerator { generate(params: PackagingGenParams): Promise<PackagingCandidate[]>; }
 
@@ -106,14 +107,26 @@ function costEstimate(params: PackagingGenParams, box: BoxType, index: number) {
 
 function directPreviewPrompt(params:PackagingGenParams,index:number){
  const variation=params.variationHint?`本轮微调：${params.variationHint}。`:"";
+ const box=params.boxType;
+ const craft=buildImageCraftBlock({
+  subject:"outer_package",
+  category:params.brief.product.category,
+  industry:params.brief.product.industry,
+  material:params.finalProductDesign.cmf.material,
+  finish:params.finalProductDesign.cmf.finish,
+  boxId:box?.id,
+  boxName:box?.name,
+  structureKind:box?.referenceAnalysis?.structureKind,
+ });
  const base=params.designPrompt?.trim()||`为品牌 ${params.brief.brand.name} 的 ${params.brief.product.name} 设计外包装效果预览，沿用产品 CMF ${params.finalProductDesign.cmf.colorScheme.join("、")}、${params.finalProductDesign.cmf.material}、${params.finalProductDesign.cmf.finish}。`;
  return `${base}
 
 真实参考图顺序：第 1 张是定稿 Logo 强参考，必须保持图形、字形、比例、留白和组合关系；第 2 张是定稿产品图。产品图仅用于提取配色、材质、表面工艺、光线与品牌氛围，严禁复制其产品本体、器型、封口、功能结构或将其误画为外包装。
 唯一主设计对象是外包装。根据用户要求、产品品类和合理装配空间自行规划可生产的外包装结构、轮廓、开合方式与材质；每张候选可探索不同结构，不受旧盒型限制。禁止把外包装画成茶包、面膜袋、瓶器、罐体、设备或其他产品本体。
+${craft}
 ${variation}这是同一提示词下的第 ${index+1} 个效果方案，可以调整结构、图形语言、光线、材质细节和场景道具，但不得更换或重绘定稿 Logo。
 输出一张 9:16 高质量外包装概念效果预览：上方约 60% 是一张连续完整的商业场景，完整外包装必须占据视觉中心；产品本体最多是小比例辅助道具。下方约 40% 是干净背景上的同一外包装正面、侧面和背面展示，严禁任何产品本体进入下方结构区。上下只允许水平分区，所有视图必须是同一套外包装设计。
-严禁刀版、展开图、平面展开稿、CAD、尺寸线、裁切线、折线、出血线、印刷工程标注、灰色信息块、UI、提示词、JSON、水印和左右分栏。画面必须是制作完成后的真实外包装效果，而不是设计稿截图。`;
+严禁刀版、展开图、CAD、尺寸线和印刷工程标注、灰色信息块、UI、提示词、JSON、水印和左右分栏。画面必须是制作完成后的真实外包装效果，而不是设计稿截图。`;
 }
 
 class AiPackagingGenerator implements PackagingGenerator{

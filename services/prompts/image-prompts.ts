@@ -3,6 +3,7 @@ import type { ProductDesignCandidate, ProductViewType } from "@/types/product-de
 import type { MarketingImageParams, ImageType } from "@/types/marketing-image";
 import type { DesignBrief } from "@/types/design-brief";
 import { resolveProductInformationCompleteness } from "@/services/product-information-completeness";
+import { buildImageCraftBlock } from "@/services/prompts/image-craft";
 
 const logoTypePrompts={wordmark:"wordmark: use the full brand name as the primary typographic logo",lettermark:"lettermark: use a concise brand-initial monogram",pictorial:"pictorial mark: use one recognizable concrete symbol",abstract:"abstract mark: use an original non-representational geometric symbol",combination:"combination mark: combine a distinct symbol with the brand name",emblem:"emblem mark: place the brand name within a contained badge silhouette"} as const;
 const fontPrompts={serif:"elegant classic serif typography",sans:"modern rational sans-serif typography",handwritten:"warm natural handwritten typography"} as const;
@@ -40,16 +41,28 @@ export function buildProductDirectPrompt(candidate:ProductDesignCandidate,brief:
   const typography=snapshot?.typographySystem;
   const typographyRule=typography?`字体系统：${typography.fontPairing}。层级要求：品牌 ${typography.hierarchy.brand}；品名 ${typography.hierarchy.productName}；标语 ${typography.hierarchy.slogan}；短卖点 ${typography.hierarchy.supporting}；背面正文 ${typography.hierarchy.body}。对齐：${typography.alignment}。间距节奏：${typography.spacing}。网格：${typography.grid}。图文融合：${typography.graphicIntegration}。`:"字体系统最多使用两套字体，至少形成品牌/品名、标语、辅助信息三级清晰层级；通过字号、字重、字距、行距和主对齐轴建立节奏，禁止全部同字号、同字重、机械居中堆叠。";
   const direction=snapshot?`核心创意：${snapshot.creativeConcept||candidate.styleDirection}。视觉性格：${snapshot.visualPersonality||"按当前方向执行"}。设计取舍：${snapshot.designRationale||"保持结构，开放视觉"}。图形语言：${snapshot.surfaceCmf?.graphicLanguage||snapshot.graphicLanguage}。${typographyRule}表面工艺：${snapshot.surfaceCmf?.printFinish||snapshot.materialStrategy}。商业场景：${snapshot.surfaceCmf?.sceneDirection||snapshot.sceneDirection}。本方向禁用：${snapshot.avoidMotifs.join("、")||"仅禁止无关产品、乱码、UI 和水印"}。`:typographyRule;
+  const craft=buildImageCraftBlock({
+    subject:"product",
+    category:brief.product.category,
+    industry:brief.product.industry,
+    material:candidate.cmf.material,
+    finish:candidate.cmf.finish,
+    containerId:candidate.containerType.id,
+    containerName:candidate.containerType.name,
+    containerKind:candidate.containerType.kind,
+    shapeFamily:candidate.containerType.shapeFamily,
+  });
   return `直接生成一张完整的专业商业产品概念设计图，所有包装文字、字体层级与整体视觉由图像模型一次完成。
 产品背景：${brief.product.name}；品类：${brief.product.category}。这些只用于理解产品，不要求作为固定包装文案。${structure}
 参考图输入顺序：第 1 张是器型/结构硬约束；第 2 张是不可改动的定稿 Logo 强参考；如有第 3 张则是本方向可选择吸收的视觉参考板。
 必须忠实复现第 2 张定稿 Logo 的图形、字形、比例、留白和组合关系，在场景产品与下方结构视图中保持一致；不得重新设计、重新打字、替换、省略或加入其他 Logo。视觉参考图只借鉴气质，不能覆盖定稿 Logo。
 【9:16固定画面构图】${layoutRule} 上方场景中的产品与下方结构视图必须使用完全一致的器型、配色、图案、品牌标志、可见文案和字体系统。场景产品只能出现一次并完整可见；下方仅展示结构视图，不得重复场景。商业场景像正式品牌广告摄影，材质可信、光影自然、使用语境明确。
 设计方向：${candidate.styleDirection}。${direction}基础包材：${candidate.cmf.material}；方向色板：${candidate.cmf.colors?.map(item=>`${item.name}${item.hex}`).join("、")||candidate.cmf.colorScheme.join("、")}；表面处理：${candidate.cmf.finish}。
+${craft}
 ${visualDirection}
 除定稿 Logo 外，包装上的所有可见文字由 AI 自由创作：可决定内容、语言、数量、字体组合、字号、字重、字距、对齐和图文关系，不读取或复述第 3 步文案，也不要求内容事实准确，但视觉信息架构必须完整。当前产品的信息完整度规则：${completeness.promptRule} 文字必须像成熟品牌包装的一部分，最多两套字体，至少形成主标识、核心信息、辅助文字三级视觉层级，并与图形、色块、留白和材质自然融合。禁止普通办公文档式排版、所有文字同字号居中堆叠、乱码式大段文字。不得出现“背面信息、功效说明、成分说明、使用说明”等系统字段名，也不得出现 sourceKey、copyAdaptations、提示词、JSON、UI 或后台术语。文字不得压住封口、折边、开口、按键或功能结构。商业场景不添加悬浮广告标题或说明卡，只呈现产品本体。
 不要默认极简、高端、克制、低饱和、留白或编辑感；严格执行本方向自己的视觉性格、配色、图形、字体、表面工艺、场景和构图。水波、模特、浴室与透明材质仅在本方向明确且符合产品逻辑时使用。
-${variation?`变体要求：${variation}。`:""} 最终为 9:16 竖版完整构图，严格上 60% 场景、下 40% 结构展示；整件产品和结构视图不得裁切；不要左右分栏、斜切、嵌入视图、乱码、灰色信息块、白色说明卡、悬浮标签、UI 面板、水印、设计过程稿或独立技术标注。`;
+${variation?`变体要求：${variation}。`:""} 最终为 9:16 竖版完整构图，严格上 60% 场景、下 40% 结构展示；整件产品和结构视图不得裁切；不要左右分栏、斜切、嵌入视图、乱码、灰色信息块、白色说明卡、悬浮标签、UI 面板、水印或设计过程稿。`;
 }
 export function buildPackagingTexturePrompt(style:string,palette:string[],variation?:string){return `Seamless premium packaging background texture and decorative pattern. Style: ${style}. Palette: ${palette.join(", ")}. ${variation||""} Subtle, restrained, suitable behind accurate typography, large clean areas, flat front-facing texture, no box mockup, no product, no text, no letters, no symbols, no watermark.`;}
 const marketingPrompts:Record<ImageType,(params:MarketingImageParams,index:number)=>string>={

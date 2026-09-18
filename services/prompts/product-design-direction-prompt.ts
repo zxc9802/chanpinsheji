@@ -2,6 +2,7 @@ import type { DesignBrief } from "@/types/design-brief";
 import type { ContainerType } from "@/types/container";
 import type { ProductStructureMode } from "@/types/product-design";
 import { resolveProductInformationCompleteness } from "@/services/product-information-completeness";
+import { buildImageCraftBlock } from "@/services/prompts/image-craft";
 
 export const productDesignDirectionSystemPrompt =
   "你是资深工业设计、包装视觉与商业产品摄影艺术总监。你负责规划差异明显、可以直接生图的概念设计方向。定稿 Logo 是唯一固定的视觉标识，必须忠实保留；除此之外，包装文字与字体版式均由你自由设计。只输出严格 JSON。";
@@ -29,6 +30,16 @@ export function buildProductDesignDirectionPrompt(params: {
     params.structureMode === "reference"
       ? `${container?.name || "用户上传结构"}；轮廓、比例、封口、结构、使用方式与参考一致；规格 ${container?.volumeOptions.join("/") || brief.hardConstraints.dimensions || "按参考图"}；基础包材 ${container?.materialOptions.join("/") || "按参考图"}`
       : `依据“${brief.product.name} / ${brief.product.category}”设计合理、可生产的产品结构，不套用无关器型`;
+  const craft = buildImageCraftBlock({
+    subject: "product",
+    category: brief.product.category,
+    industry: brief.product.industry,
+    material: container?.materialOptions?.join(" "),
+    containerId: container?.id,
+    containerName: container?.name,
+    containerKind: container?.kind,
+    shapeFamily: container?.shapeFamily,
+  });
 
   return `生成 ${count} 个可以直接用于生图的产品概念设计方向。
 
@@ -45,6 +56,9 @@ export function buildProductDesignDirectionPrompt(params: {
 - 目标人群：${brief.consumer.ageRange}；${brief.consumer.keywords.join("、")}
 - 产品卖点、功效、成分与场景：${brief.product.coreSellingPoints.map((item) => item.point).join("；")}；${brief.product.efficacy.join("、")}；${brief.product.keyIngredients.join("、")}；${brief.product.usageScenarios}
 - 用户设计要求：${params.requirement.trim() || "无额外要求"}
+
+【商业成像】
+${craft}
 
 【视觉参考图】
 ${refs.length ? `${refs.map((item) => `${item.id}=${item.name}`).join("；")}。每个方向可选 0–3 张，只借鉴配色、材质、图形、光线或气质，不得照搬其中的 Logo、品牌或受版权保护图形。` : "没有用户视觉参考图，请独立创作。"}
@@ -86,6 +100,6 @@ ${refs.length ? `${refs.map((item) => `${item.id}=${item.name}`).join("；")}。
   "referenceImageIds":["可选的用户视觉参考图ID"],
   "avoidMotifs":["本方向自己判断的禁用元素"],
   "colors":[{"name":"颜色名","hex":"#RRGGBB"}],
-  "promptZh":"包含固定 Logo 强参考、自由文字系统、动态信息完整度规则、固定上下构图和最终视觉的完整中文生图提示词"
+  "promptZh":"包含固定 Logo 强参考、自由文字系统、动态信息完整度规则、固定上下构图、【商业成像】中的主光/工艺/镜头，以及最终视觉的完整中文生图提示词"
 }]}`;
 }

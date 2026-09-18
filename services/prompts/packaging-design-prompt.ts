@@ -1,5 +1,6 @@
 import type { DesignBrief } from "@/types/design-brief";
 import type { BoxType } from "@/types/packaging";
+import { buildImageCraftBlock } from "@/services/prompts/image-craft";
 
 export const packagingDesignPromptSystemPrompt =
   "你是资深消费品外包装设计与商业包装摄影艺术总监。你只设计外包装，不把产品本体当作外包装。根据真实结构参考图规划可直接用于图像模型的中文提示词。只输出严格 JSON，不输出解释。";
@@ -21,6 +22,16 @@ export function buildPackagingDesignPrompt(params: {
   const openingMethod = analysis?.openingMethod || "按上传参考图保持原有开合方式";
   const outlineRatio = analysis?.outlineRatio || "按上传参考图保持外轮廓比例";
   const viewMode = analysis?.viewMode === "two_view" ? "正面和背面" : "正面、侧面和背面";
+  const craft = buildImageCraftBlock({
+    subject: "outer_package",
+    category: brief.product.category,
+    industry: brief.product.industry,
+    material: params.productCmf.material,
+    finish: params.productCmf.finish,
+    boxId: boxType.id,
+    boxName: boxType.name,
+    structureKind: analysis?.structureKind,
+  });
 
   return `请生成 ${count} 条完整、可独立选择的外包装效果图中文生图提示词。
 
@@ -49,6 +60,9 @@ export function buildPackagingDesignPrompt(params: {
 - 主标语参考：${params.mainSlogan || brief.brand.slogan || "无"}
 - 用户设计要求：${params.requirement.trim() || "无额外要求，请依据品牌与产品自由完成高质量概念设计"}
 
+【商业成像】
+${craft}
+
 【固定展示形式】
 - 一张 9:16 高质量外包装概念效果预览。
 - 上方约 60%：一张连续完整的商业场景，外包装完整、清楚、占据视觉中心；产品最多作为不抢主体的小道具。
@@ -63,7 +77,7 @@ export function buildPackagingDesignPrompt(params: {
 - 禁止灰色信息块、UI、提示词、JSON、设计说明、水印和系统字段名。
 - 不要生成普通办公文档式排版或大段乱码；包装文字要形成自然的品牌层级和图文关系。
 
-提示词需说明外包装主体、已确认结构、Logo 强参考、商业场景、结构视图、色彩、材质、工艺、图形语言、字体气质、灯光与成像质量。严格返回：
+提示词需说明外包装主体、已确认结构、Logo 强参考、商业场景、结构视图、色彩、材质、工艺、图形语言、字体气质，以及【商业成像】里的主光方向、表面工艺和镜头/景深。严格返回：
 {"directions":[{"subjectType":"outer_package","structureSummary":"${structureSummary}","directionName":"简短且有辨识度的方向名称","designSummary":"一句话概括视觉差异","promptZh":"一条可直接用于图像生成模型的完整中文提示词"}]}
 
 必须恰好返回 ${count} 个方向。各方向必须保持同一外包装结构和定稿 Logo，但在配色、图形语言、字体气质、材质工艺和商业场景中至少有三项明显不同。`;
