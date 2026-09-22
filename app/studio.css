@@ -19,7 +19,7 @@
 .studio-gallery-heading{margin-bottom:22px}.studio-gallery-heading>span,.studio-gallery-more>span{font-size:12px;color:#738277}
 .studio-concept-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:20px}
 .quick-studio .studio-concept-card{display:flex;flex-direction:column;min-width:0;padding:14px;text-align:left;background:#fff;border-radius:10px;overflow:hidden}
-.quick-studio .studio-concept-card:disabled{opacity:1;color:#738277}.studio-concept-card:disabled .studio-concept-image{opacity:.65}
+.quick-studio .studio-concept-card:disabled{opacity:1;color:#738277}
 .studio-concept-image{height:380px;width:100%;display:flex;justify-content:center;align-items:center;background:#fff}
 .studio-front-preview{position:relative;overflow:hidden;height:100%;max-width:100%;background:#fff}
 .studio-front-preview img{position:absolute;left:0;top:0;width:300%;height:100%;max-width:none;display:block}
